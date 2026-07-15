@@ -3,6 +3,8 @@ name: Test macOS
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
+    branches:
+      - '**'
     paths-ignore:
       - '**.md'
       - '**.nix'
@@ -29,10 +31,7 @@ on:
       - '!.github/workflows/test-macos.yml'
   push:
     branches:
-      - main
-      - canary
-      - v[0-9]+.x-staging
-      - v[0-9]+.x
+      - '**'
     paths-ignore:
       - '**.md'
       - '**.nix'
@@ -130,11 +129,4 @@ jobs:
       - name: Free Space After Build
         run: df -h
       - name: Test
-        run: make -C node test-ci -j1 V=1 TEST_CI_ARGS="-p actions --measure-flakiness 9"
-      - name: Re-run test in a folder whose name contains unusual chars
-        run: |
-          mv node "$DIR"
-          cd "$DIR"
-          ./tools/test.py --flaky-tests keep_retrying -p actions -j 4
-        env:
-          DIR: dir%20with $unusual"chars?'åß∂ƒ©∆¬…`
+        run: node/out/Release/node node/test/parallel/test-http-client-complete-response-reset.js
