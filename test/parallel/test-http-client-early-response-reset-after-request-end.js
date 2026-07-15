@@ -36,6 +36,7 @@ const server = http.createServer(common.mustCall((request, response) => {
 server.on('clientError', common.mustNotCall());
 
 server.listen(0, common.mustCall(() => {
+  let response;
   const req = http.request({
     method: 'POST',
     port: server.address().port,
@@ -43,11 +44,22 @@ server.listen(0, common.mustCall(() => {
       'content-type': 'application/json',
     },
   }, common.mustCall((res) => {
+    response = res;
     assert.strictEqual(res.statusCode, 413);
     assert.strictEqual(req.writableEnded, true);
     res.resume();
   }));
 
+  req.on('error', (err) => {
+    console.error({
+      code: err.code,
+      syscall: err.syscall,
+      message: err.message,
+      writableEnded: req.writableEnded,
+      writableFinished: req.writableFinished,
+      responseComplete: response?.complete,
+    });
+  });
   req.on('error', common.mustNotCall());
   req.on('close', common.mustCall(() => server.close()));
 
