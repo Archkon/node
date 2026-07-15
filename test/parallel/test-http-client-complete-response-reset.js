@@ -4,36 +4,27 @@ const common = require('../common');
 const assert = require('assert');
 const http = require('http');
 
-const MAX_BODY_LENGTH = 1024 * 1024;
-const BODY = JSON.stringify({
-  a: 'x'.repeat(512 * 1024),
-  b: 'x'.repeat(512 * 1024),
-  c: 'x'.repeat(512 * 1024),
-  d: 'x'.repeat(512 * 1024),
-}, null, '\t');
+const BODY = Buffer.alloc(2 * 1024 * 1024);
 
 const server = http.createServer(common.mustCall((request, response) => {
   let received = 0;
 
-  request.setEncoding('utf8');
   request.on('data', function onData(chunk) {
     received += chunk.length;
-    if (received > MAX_BODY_LENGTH) {
+    if (received > BODY.length / 2) {
+      request.off('data', onData);
       response.writeHead(413, { 'content-length': 0 });
       response.end();
-      request.off('data', onData);
       request.destroy();
     }
   });
 
   request.on('end', common.mustNotCall());
   request.on('close', common.mustCall(() => {
-    assert.ok(received > MAX_BODY_LENGTH);
     assert.strictEqual(request.complete, false);
+    assert.ok(received > 0);
   }));
 }));
-
-server.on('clientError', common.mustNotCall());
 
 server.listen(0, common.mustCall(() => {
   let response;
@@ -42,12 +33,14 @@ server.listen(0, common.mustCall(() => {
     port: server.address().port,
     headers: {
       'content-type': 'application/json',
+      'content-length': BODY.length,
     },
   }, common.mustCall((res) => {
     response = res;
     assert.strictEqual(res.statusCode, 413);
-    assert.strictEqual(req.writableEnded, true);
-    res.resume();
+    // Deliberately do not consume the response body. A response that has
+    // completed after the request finished should not be followed by a late
+    // ClientRequest socket error.
   }));
 
   req.on('error', (err) => {
@@ -62,10 +55,12 @@ server.listen(0, common.mustCall(() => {
     });
   });
   req.on('error', common.mustNotCall());
-  req.on('close', common.mustCall(() => server.close()));
+  req.on('close', common.mustCall(() => {
+    assert(response);
+    assert.strictEqual(req.writableFinished, true);
+    assert.strictEqual(response.complete, true);
+    server.close();
+  }));
 
-  // Preserve the ordering from the reported regression: the request body is
-  // written and ended before the response is received.
-  req.write(BODY);
-  req.end();
+  req.end(BODY);
 }));
