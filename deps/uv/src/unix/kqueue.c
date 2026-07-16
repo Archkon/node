@@ -22,6 +22,7 @@
 #include "internal.h"
 
 #include <assert.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
@@ -167,6 +168,9 @@ void uv__io_poll(uv_loop_t* loop, int timeout) {
   sigset_t* pset;
   sigset_t set;
   uint64_t base;
+#if defined(__APPLE__)
+  uint64_t debug_batch;
+#endif
   uint64_t diff;
   int have_signals;
   int filter;
@@ -302,6 +306,9 @@ void uv__io_poll(uv_loop_t* loop, int timeout) {
       goto update_timeout;
     }
 
+#if defined(__APPLE__)
+    debug_batch = uv_hrtime();
+#endif
     have_signals = 0;
     nevents = 0;
 
@@ -388,6 +395,30 @@ void uv__io_poll(uv_loop_t* loop, int timeout) {
 
       if (revents == 0)
         continue;
+
+#if defined(__APPLE__)
+      /* Temporary diagnostics for read/write ordering on reset TCP streams. */
+      if (uv__io_cb_get(w) == UV__STREAM_IO &&
+          (ev->filter == EVFILT_READ || ev->filter == EVFILT_WRITE)) {
+        fprintf(stderr,
+                "[uv-kqueue-debug] batch=%llu index=%d/%d fd=%d "
+                "filter=%s(%d) flags=0x%x fflags=0x%x data=%lld "
+                "events=0x%x pevents=0x%x revents=0x%x\n",
+                (unsigned long long) debug_batch,
+                i,
+                nfds,
+                fd,
+                ev->filter == EVFILT_READ ? "READ" : "WRITE",
+                (int) ev->filter,
+                (unsigned int) ev->flags,
+                (unsigned int) ev->fflags,
+                (long long) ev->data,
+                w->events,
+                w->pevents,
+                revents);
+        fflush(stderr);
+      }
+#endif
 
       /* Run signal watchers last.  This also affects child process watchers
        * because those are implemented in terms of signal watchers.
