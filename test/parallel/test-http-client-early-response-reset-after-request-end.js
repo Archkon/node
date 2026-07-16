@@ -50,19 +50,69 @@ server.listen(0, common.mustCall(() => {
     res.resume();
   }));
 
-  req.on('error', (err) => {
+  let socketError;
+  function logState(phase) {
     console.error({
-      code: err.code,
-      syscall: err.syscall,
-      message: err.message,
+      phase,
+      code: socketError?.code,
+      syscall: socketError?.syscall,
+      socketDestroyed: req.socket?.destroyed,
+      socketDestroying: req.socket?.destroying,
+      socketReadable: req.socket?.readable,
+      readableErrored: req.socket?._readableState.errored?.code,
+      readableErrorEmitted: req.socket?._readableState.errorEmitted,
+      handleReading: req.socket?._handle?.reading,
+      hasParser: Boolean(req.socket?.parser),
+      hasResponse: Boolean(req.res),
       writableEnded: req.writableEnded,
       writableFinished: req.writableFinished,
       responseComplete: response?.complete,
       reqResComplete: req.res?.complete,
     });
+  }
+
+  req.on('socket', (socket) => {
+    socket._readableState.autoDestroy = false;
+    socket._writableState.autoDestroy = false;
+
+    const httpSocketErrorListener = socket.listeners('error')
+      .find((listener) => listener.name === 'socketErrorListener');
+    assert(httpSocketErrorListener);
+    socket.removeListener('error', httpSocketErrorListener);
+
+    let errorHandlingScheduled = false;
+    socket.on('error', (err) => {
+      socketError ??= err;
+      logState(errorHandlingScheduled ?
+        'additional-socket-error' : 'socket-error');
+
+      if (errorHandlingScheduled) return;
+      errorHandlingScheduled = true;
+
+      if (!socket.destroyed) {
+        socket._readableState.errored = null;
+        socket._readableState.errorEmitted = false;
+        socket.resume();
+        logState('after-readable-recovery');
+      }
+
+      setTimeout(() => {
+        logState('before-delayed-http-error-listener');
+        httpSocketErrorListener.call(socket, err);
+        logState('after-delayed-http-error-listener');
+      }, 100);
+    });
+  });
+
+  req.on('error', (err) => {
+    socketError = err;
+    logState('request-error');
   });
   req.on('error', common.mustNotCall());
-  req.on('close', common.mustCall(() => server.close()));
+  req.on('close', common.mustCall(() => {
+    logState('close');
+    server.close();
+  }));
 
   // Preserve the ordering from the reported regression: the request body is
   // written and ended before the response is received.
