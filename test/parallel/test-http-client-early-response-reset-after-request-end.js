@@ -58,6 +58,7 @@ server.listen(0, common.mustCall(() => {
       syscall: socketError?.syscall,
       socketDestroyed: req.socket?.destroyed,
       socketDestroying: req.socket?.destroying,
+      socketFd: req.socket?._handle?.fd,
       socketReadable: req.socket?.readable,
       readableErrored: req.socket?._readableState.errored?.code,
       readableErrorEmitted: req.socket?._readableState.errorEmitted,
