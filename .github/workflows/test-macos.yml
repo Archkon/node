@@ -129,4 +129,9 @@ jobs:
       - name: Free Space After Build
         run: df -h
       - name: Test
-        run: node/out/Release/node node/test/parallel/test-http-client-complete-response-reset.js
+        shell: bash
+        run: |
+          status=0
+          node/out/Release/node node/test/parallel/test-http-client-complete-response-reset.js || status=$?
+          node/out/Release/node node/test/parallel/test-http-client-early-response-reset-after-request-end.js || status=$?
+          exit "$status"
