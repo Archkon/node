@@ -34,6 +34,7 @@ env:
   LOG_DIR: ${{ github.workspace }}/workflow-logs
   NODE_DEBUG: inspect,inspect_probe
   NODE_DEBUG_NATIVE: inspector,inspector_profiler
+  NODE_INSPECT_DEBUG_LOG_DIR: ${{ github.workspace }}/workflow-logs/inspect-debug
 
 jobs:
   build:
@@ -83,7 +84,7 @@ jobs:
           mkdir -p "$LOG_DIR"
           nix-shell \
             -I "nixpkgs=$TAR_DIR/tools/nix/pkgs.nix" \
-            --pure --keep TAR_DIR --keep FLAKY_TESTS --keep NODE_DEBUG --keep NODE_DEBUG_NATIVE \
+            --pure --keep TAR_DIR --keep FLAKY_TESTS --keep NODE_DEBUG --keep NODE_DEBUG_NATIVE --keep NODE_INSPECT_DEBUG_LOG_DIR \
             --keep SCCACHE_GHA_ENABLED --keep ACTIONS_CACHE_SERVICE_V2 --keep ACTIONS_RESULTS_URL --keep ACTIONS_RUNTIME_TOKEN \
             --arg loadJSBuiltinsDynamically false \
             --arg ccache "${NIX_SCCACHE:-null}" \
@@ -93,6 +94,7 @@ jobs:
             --run '
                 echo "NODE_DEBUG=$NODE_DEBUG"
                 echo "NODE_DEBUG_NATIVE=$NODE_DEBUG_NATIVE"
+                echo "NODE_INSPECT_DEBUG_LOG_DIR=$NODE_INSPECT_DEBUG_LOG_DIR"
                 echo "CI_SKIP_TESTS=$CI_SKIP_TESTS"
                 make -C "$TAR_DIR" run-ci -j4 V=1 TEST_CI_ARGS="-p actions --measure-flakiness 9 --skip-tests=$CI_SKIP_TESTS"
             ' "$TAR_DIR/shell.nix" 2>&1 |
@@ -113,11 +115,13 @@ jobs:
             echo "github.run_attempt=${{ github.run_attempt }}"
             echo "NODE_DEBUG=$NODE_DEBUG"
             echo "NODE_DEBUG_NATIVE=$NODE_DEBUG_NATIVE"
+            echo "NODE_INSPECT_DEBUG_LOG_DIR=$NODE_INSPECT_DEBUG_LOG_DIR"
             date -u '+utc=%Y-%m-%dT%H:%M:%SZ'
             uname -a || true
             ulimit -a || true
             pwd
             df -h || true
+            find "$NODE_INSPECT_DEBUG_LOG_DIR" -maxdepth 1 -type f -print -exec wc -c {} \; 2>/dev/null || true
           } > "$LOG_DIR/diagnostics.txt"
           if [ -d "$HOME/Library/Logs/DiagnosticReports" ]; then
             mkdir -p "$LOG_DIR/DiagnosticReports"

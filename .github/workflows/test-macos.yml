@@ -78,6 +78,7 @@ jobs:
       CC: ${{ (github.base_ref == 'main' || github.ref_name == 'main') && 'sccache' || '' }} gcc
       CXX: ${{ (github.base_ref == 'main' || github.ref_name == 'main') && 'sccache' || '' }} g++
       LOG_DIR: ${{ github.workspace }}/test-logs
+      NODE_INSPECT_DEBUG_LOG_DIR: ${{ github.workspace }}/test-logs/inspect-debug
       SCCACHE_GHA_ENABLED: ${{ github.base_ref == 'main' || github.ref_name == 'main' }}
       SCCACHE_IDLE_TIMEOUT: '0'
     steps:
@@ -130,6 +131,7 @@ jobs:
           {
             echo "NODE_DEBUG=$NODE_DEBUG"
             echo "NODE_DEBUG_NATIVE=$NODE_DEBUG_NATIVE"
+            echo "NODE_INSPECT_DEBUG_LOG_DIR=$NODE_INSPECT_DEBUG_LOG_DIR"
             make -C node build-ci -j$(getconf _NPROCESSORS_ONLN) V=1 CONFIG_FLAGS="--error-on-warn --v8-enable-temporal-support"
           } 2>&1 | tee "$LOG_DIR/build.log"
       - name: Free Space After Build
@@ -141,6 +143,7 @@ jobs:
           {
             echo "NODE_DEBUG=$NODE_DEBUG"
             echo "NODE_DEBUG_NATIVE=$NODE_DEBUG_NATIVE"
+            echo "NODE_INSPECT_DEBUG_LOG_DIR=$NODE_INSPECT_DEBUG_LOG_DIR"
             make -C node test-ci -j1 V=1 TEST_CI_ARGS="-p actions --measure-flakiness 9"
           } 2>&1 |
             tee "$LOG_DIR/test-ci.log"
@@ -154,6 +157,7 @@ jobs:
             echo "DIR=$DIR"
             echo "NODE_DEBUG=$NODE_DEBUG"
             echo "NODE_DEBUG_NATIVE=$NODE_DEBUG_NATIVE"
+            echo "NODE_INSPECT_DEBUG_LOG_DIR=$NODE_INSPECT_DEBUG_LOG_DIR"
             python3 ./tools/test.py --flaky-tests keep_retrying -p actions -j 4
           } 2>&1 |
             tee "$LOG_DIR/unusual-path-test.log"
@@ -173,11 +177,13 @@ jobs:
             echo "github.run_attempt=${{ github.run_attempt }}"
             echo "NODE_DEBUG=$NODE_DEBUG"
             echo "NODE_DEBUG_NATIVE=$NODE_DEBUG_NATIVE"
+            echo "NODE_INSPECT_DEBUG_LOG_DIR=$NODE_INSPECT_DEBUG_LOG_DIR"
             date -u '+utc=%Y-%m-%dT%H:%M:%SZ'
             uname -a || true
             ulimit -a || true
             pwd
             df -h || true
+            find "$NODE_INSPECT_DEBUG_LOG_DIR" -maxdepth 1 -type f -print -exec wc -c {} \; 2>/dev/null || true
           } > "$LOG_DIR/diagnostics.txt"
           if [ -d "$HOME/Library/Logs/DiagnosticReports" ]; then
             mkdir -p "$LOG_DIR/DiagnosticReports"

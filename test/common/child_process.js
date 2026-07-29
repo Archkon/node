@@ -3,6 +3,7 @@
 const assert = require('assert');
 const { spawnSync, execFileSync } = require('child_process');
 const common = require('./');
+const { writeInspectDebugLog } = require('./inspect-debug-log');
 const util = require('util');
 
 // Workaround for Windows Server 2008R2
@@ -79,10 +80,12 @@ function expectSyncExit(caller, spawnArgs, {
 
   function logAndThrow() {
     const tag = `[process ${child.pid}]:`;
+    const fullStderr = child.stderr?.toString() ?? '';
+    const fullStdout = child.stdout?.toString() ?? '';
     console.error(`${tag} --- stderr ---`);
-    console.error(stderrStr === undefined ? (child.stderr?.toString() ?? '') : stderrStr);
+    console.error(stderrStr === undefined ? fullStderr : stderrStr);
     console.error(`${tag} --- stdout ---`);
-    console.error(stdoutStr === undefined ? (child.stdout?.toString() ?? '') : stdoutStr);
+    console.error(stdoutStr === undefined ? fullStdout : stdoutStr);
     console.error(`${tag} status = ${child.status}, signal = ${child.signal}`);
 
     const error = new Error(`${failures.join('\n')}`);
@@ -107,6 +110,24 @@ function expectSyncExit(caller, spawnArgs, {
     if (Array.isArray(spawnArgs[1])) {
       command += ' ' + spawnArgs[1].join(' ');
     }
+    writeInspectDebugLog('spawn-sync-failure', [
+      `pid=${child.pid}`,
+      `command=${command}`,
+      `status=${child.status}`,
+      `signal=${child.signal}`,
+      `NODE_DEBUG=${process.env.NODE_DEBUG || ''}`,
+      `NODE_DEBUG_NATIVE=${process.env.NODE_DEBUG_NATIVE || ''}`,
+      '',
+      '--- failures ---',
+      failures.join('\n'),
+      '',
+      '--- stderr ---',
+      fullStderr,
+      '',
+      '--- stdout ---',
+      fullStdout,
+      '',
+    ].join('\n'));
     error.command = command;
     Error.captureStackTrace(error, caller);
     throw error;

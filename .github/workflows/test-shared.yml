@@ -108,6 +108,7 @@ env:
   LOG_DIR: ${{ github.workspace }}/workflow-logs
   NODE_DEBUG: inspect,inspect_probe
   NODE_DEBUG_NATIVE: inspector,inspector_profiler
+  NODE_INSPECT_DEBUG_LOG_DIR: ${{ github.workspace }}/workflow-logs/inspect-debug
 
 jobs:
   build-tarball:
@@ -126,6 +127,7 @@ jobs:
           {
             echo "NODE_DEBUG=$NODE_DEBUG"
             echo "NODE_DEBUG_NATIVE=$NODE_DEBUG_NATIVE"
+            echo "NODE_INSPECT_DEBUG_LOG_DIR=$NODE_INSPECT_DEBUG_LOG_DIR"
             export DATESTRING=$(date "+%Y-%m-%d")
             export COMMIT=$(git rev-parse --short=10 "$GITHUB_SHA")
             ./configure && make tar -j4 SKIP_XZ=1 SKIP_SHARED_DEPS=1
@@ -153,11 +155,13 @@ jobs:
             echo "github.run_attempt=${{ github.run_attempt }}"
             echo "NODE_DEBUG=$NODE_DEBUG"
             echo "NODE_DEBUG_NATIVE=$NODE_DEBUG_NATIVE"
+            echo "NODE_INSPECT_DEBUG_LOG_DIR=$NODE_INSPECT_DEBUG_LOG_DIR"
             date -u '+utc=%Y-%m-%dT%H:%M:%SZ'
             uname -a || true
             ulimit -a || true
             pwd
             df -h || true
+            find "$NODE_INSPECT_DEBUG_LOG_DIR" -maxdepth 1 -type f -print -exec wc -c {} \; 2>/dev/null || true
           } > "$LOG_DIR/diagnostics.txt"
 
       - name: Upload workflow logs
@@ -278,11 +282,13 @@ jobs:
             echo "github.run_attempt=${{ github.run_attempt }}"
             echo "NODE_DEBUG=$NODE_DEBUG"
             echo "NODE_DEBUG_NATIVE=$NODE_DEBUG_NATIVE"
+            echo "NODE_INSPECT_DEBUG_LOG_DIR=$NODE_INSPECT_DEBUG_LOG_DIR"
             date -u '+utc=%Y-%m-%dT%H:%M:%SZ'
             uname -a || true
             ulimit -a || true
             pwd
             df -h || true
+            find "$NODE_INSPECT_DEBUG_LOG_DIR" -maxdepth 1 -type f -print -exec wc -c {} \; 2>/dev/null || true
           } > "$LOG_DIR/diagnostics.txt"
 
       - name: Upload workflow logs

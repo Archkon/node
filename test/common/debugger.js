@@ -1,6 +1,7 @@
 'use strict';
 const common = require('../common');
 const spawn = require('child_process').spawn;
+const { writeInspectDebugLog } = require('./inspect-debug-log');
 
 const BREAK_MESSAGE = new RegExp('(?:' + [
   'assert', 'break', 'break on start', 'debugCommand',
@@ -28,10 +29,52 @@ function startCLI(args, flags = [], spawnOpts = {}, opts = { randomPort: true })
   ], spawnOpts);
 
   const outputBuffer = [];
+  const rawOutputChunks = [];
+  let failureLogWritten = false;
+
+  function writeFailureLog(reason) {
+    if (failureLogWritten) return;
+    failureLogWritten = true;
+    const command = [
+      process.execPath,
+      ...flags,
+      'inspect',
+      ...(opts.randomPort !== false ? ['--port=0'] : []),
+      ...args,
+    ].join(' ');
+
+    const rawChunks = rawOutputChunks.map(({ stream, chunk }) => {
+      return `--- ${stream} chunk (${Buffer.byteLength(chunk)} bytes) ---\n${chunk}`;
+    }).join('\n');
+
+    writeInspectDebugLog('debugger-cli-failure', [
+      `reason=${reason}`,
+      `pid=${child.pid}`,
+      `command=${command}`,
+      `cwd=${spawnOpts.cwd || process.cwd()}`,
+      `NODE_DEBUG=${process.env.NODE_DEBUG || ''}`,
+      `NODE_DEBUG_NATIVE=${process.env.NODE_DEBUG_NATIVE || ''}`,
+      '',
+      '--- normalized output ---',
+      getOutput(),
+      '',
+      '--- stderr output ---',
+      stderrOutput,
+      '',
+      '--- raw output chunks ---',
+      rawChunks,
+      '',
+    ].join('\n'));
+  }
+
   function bufferOutput(chunk) {
     if (this === child.stderr) {
       stderrOutput += chunk;
     }
+    rawOutputChunks.push({
+      stream: this === child.stderr ? 'stderr' : 'stdout',
+      chunk,
+    });
     outputBuffer.push(chunk);
   }
 
@@ -81,10 +124,11 @@ function startCLI(args, flags = [], spawnOpts = {}, opts = { randomPort: true })
           if (signal) {
             message += `, signal ${signal}`;
           }
-          message += ` while waiting for ${pattern}; found: ${this.output}`;
+          message += ` while waiting for ${pattern}; found: ${getOutput()}`;
           if (stderrOutput) {
             message += `\n STDERR: ${stderrOutput}`;
           }
+          writeFailureLog(message);
           reject(new Error(message));
         }
 
@@ -92,6 +136,7 @@ function startCLI(args, flags = [], spawnOpts = {}, opts = { randomPort: true })
         const timeoutErr = new Error(`Timeout (${TIMEOUT}) while waiting for ${pattern}`);
         const timer = setTimeout(() => {
           tearDown();
+          writeFailureLog(timeoutErr.message);
           timeoutErr.output = this.output;
           reject(timeoutErr);
         }, TIMEOUT);
