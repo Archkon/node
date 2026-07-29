@@ -30,6 +30,18 @@ using v8_inspector::StringView;
 // kKill closes connections and stops the server, kStop only stops the server
 enum class TransportAction { kKill, kSendMessage, kStop };
 
+const char* TransportActionName(TransportAction action) {
+  switch (action) {
+    case TransportAction::kKill:
+      return "kill";
+    case TransportAction::kSendMessage:
+      return "send-message";
+    case TransportAction::kStop:
+      return "stop";
+  }
+  return "unknown";
+}
+
 std::string ScriptPath(uv_loop_t* loop, const std::string& script_name) {
   std::string script_path;
 
@@ -75,6 +87,11 @@ class RequestToServer {
                     message_(std::move(message)) {}
 
   void Dispatch(InspectorSocketServer* server) const {
+    per_process::Debug(DebugCategory::INSPECTOR_SERVER,
+                       "[inspector io] dispatch action=%s session=%s bytes=%s\n",
+                       TransportActionName(action_),
+                       session_id_,
+                       message_ == nullptr ? 0 : message_->string().length());
     switch (action_) {
       case TransportAction::kKill:
         server->TerminateConnections();
@@ -117,6 +134,13 @@ class RequestQueueData {
             std::unique_ptr<StringBuffer> message) {
     Mutex::ScopedLock scoped_lock(state_lock_);
     bool notify = messages_.empty();
+    per_process::Debug(DebugCategory::INSPECTOR_SERVER,
+                       "[inspector io] queue action=%s session=%s bytes=%s notify=%s queuedBefore=%s\n",
+                       TransportActionName(action),
+                       session_id,
+                       message == nullptr ? 0 : message->string().length(),
+                       notify,
+                       messages_.size());
     messages_.emplace_back(action, session_id, std::move(message));
     if (notify) {
       CHECK_EQ(0, uv_async_send(&async_));
@@ -150,9 +174,16 @@ class RequestQueueData {
   }
 
   void DoDispatch() {
-    if (server_ == nullptr)
+    if (server_ == nullptr) {
+      per_process::Debug(DebugCategory::INSPECTOR_SERVER,
+                         "[inspector io] dispatch skipped no server\n");
       return;
-    for (const auto& request : GetMessages()) {
+    }
+    MessageQueue messages = GetMessages();
+    per_process::Debug(DebugCategory::INSPECTOR_SERVER,
+                       "[inspector io] dispatch batch size=%s\n",
+                       messages.size());
+    for (const auto& request : messages) {
       request.Dispatch(server_);
     }
   }
@@ -198,6 +229,10 @@ class IoSessionDelegate : public InspectorSessionDelegate {
   explicit IoSessionDelegate(std::shared_ptr<RequestQueue> queue, int id)
                              : request_queue_(queue), id_(id) { }
   void SendMessageToFrontend(const v8_inspector::StringView& message) override {
+    per_process::Debug(DebugCategory::INSPECTOR_SERVER,
+                       "[inspector io] delegate send session=%s bytes=%s\n",
+                       id_,
+                       message.length());
     request_queue_->Post(id_, TransportAction::kSendMessage,
                          StringBuffer::create(message));
   }
@@ -245,14 +280,22 @@ std::unique_ptr<InspectorIo> InspectorIo::Start(
     const std::string& path,
     std::shared_ptr<ExclusiveAccess<HostPort>> host_port,
     const InspectPublishUid& inspect_publish_uid) {
+  per_process::Debug(DebugCategory::INSPECTOR_SERVER,
+                     "[inspector io] start requested path=%s\n",
+                     path);
   auto io = std::unique_ptr<InspectorIo>(
       new InspectorIo(main_thread,
                       path,
                       host_port,
                       inspect_publish_uid));
   if (io->request_queue_->Expired()) {  // Thread is not running
+    per_process::Debug(DebugCategory::INSPECTOR_SERVER,
+                       "[inspector io] start failed: request queue expired\n");
     return nullptr;
   }
+  per_process::Debug(DebugCategory::INSPECTOR_SERVER,
+                     "[inspector io] start complete target=%s\n",
+                     io->id_);
   return io;
 }
 
@@ -266,18 +309,31 @@ InspectorIo::InspectorIo(std::shared_ptr<MainThreadHandle> main_thread,
       thread_(),
       script_name_(path),
       id_(GenerateID()) {
+  per_process::Debug(DebugCategory::INSPECTOR_SERVER,
+                     "[inspector io] constructor target=%s script=%s\n",
+                     id_,
+                     script_name_);
   Mutex::ScopedLock scoped_lock(thread_start_lock_);
   CHECK_EQ(uv_thread_create(&thread_, InspectorIo::ThreadMain, this), 0);
   thread_start_condition_.Wait(scoped_lock);
 }
 
 InspectorIo::~InspectorIo() {
+  per_process::Debug(DebugCategory::INSPECTOR_SERVER,
+                     "[inspector io] destructor target=%s\n",
+                     id_);
   request_queue_->Post(0, TransportAction::kKill, nullptr);
   int err = uv_thread_join(&thread_);
   CHECK_EQ(err, 0);
+  per_process::Debug(DebugCategory::INSPECTOR_SERVER,
+                     "[inspector io] destructor complete target=%s\n",
+                     id_);
 }
 
 void InspectorIo::StopAcceptingNewConnections() {
+  per_process::Debug(DebugCategory::INSPECTOR_SERVER,
+                     "[inspector io] stop accepting target=%s\n",
+                     id_);
   request_queue_->Post(0, TransportAction::kStop, nullptr);
 }
 
@@ -287,6 +343,9 @@ void InspectorIo::ThreadMain(void* io) {
 }
 
 void InspectorIo::ThreadMain() {
+  per_process::Debug(DebugCategory::INSPECTOR_SERVER,
+                     "[inspector io] thread main begin target=%s\n",
+                     id_);
   int thread_name_error = uv_thread_setname("InspectorIo");
   if (!thread_name_error) [[unlikely]] {
     per_process::Debug(node::DebugCategory::INSPECTOR_SERVER,
@@ -322,11 +381,28 @@ void InspectorIo::ThreadMain() {
     if (server.Start()) {
       ExclusiveAccess<HostPort>::Scoped host_port(host_port_);
       host_port->set_port(server.Port());
+      per_process::Debug(DebugCategory::INSPECTOR_SERVER,
+                         "[inspector io] server started target=%s host=%s port=%s\n",
+                         id_,
+                         host_port->host(),
+                         server.Port());
+    } else {
+      per_process::Debug(DebugCategory::INSPECTOR_SERVER,
+                         "[inspector io] server failed to start target=%s host=%s port=%s\n",
+                         id_,
+                         host,
+                         port);
     }
     thread_start_condition_.Broadcast(scoped_lock);
   }
   uv_run(&loop, UV_RUN_DEFAULT);
+  per_process::Debug(DebugCategory::INSPECTOR_SERVER,
+                     "[inspector io] uv_run returned target=%s\n",
+                     id_);
   CheckedUvLoopClose(&loop);
+  per_process::Debug(DebugCategory::INSPECTOR_SERVER,
+                     "[inspector io] thread main end target=%s\n",
+                     id_);
 }
 
 std::string InspectorIo::GetWsUrl() const {
@@ -346,6 +422,10 @@ InspectorIoDelegate::InspectorIoDelegate(
 
 void InspectorIoDelegate::StartSession(int session_id,
                                        const std::string& target_id) {
+  per_process::Debug(DebugCategory::INSPECTOR_SERVER,
+                     "[inspector io] start session=%s target=%s\n",
+                     session_id,
+                     target_id);
   fprintf(stderr, "Debugger attached.\n");
 }
 
@@ -371,6 +451,11 @@ std::optional<std::string> InspectorIoDelegate::GetTargetSessionId(
 
 void InspectorIoDelegate::MessageReceived(int session_id,
                                           const std::string& message) {
+  per_process::Debug(DebugCategory::INSPECTOR_SERVER,
+                     "[inspector io] message received session=%s bytes=%s %s\n",
+                     session_id,
+                     message.size(),
+                     message);
   std::optional<std::string> target_session_id_str =
       GetTargetSessionId(message);
   std::shared_ptr<MainThreadHandle> worker = nullptr;
@@ -389,6 +474,13 @@ void InspectorIoDelegate::MessageReceived(int session_id,
   }
 
   auto session = sessions_.find(merged_session_id);
+  per_process::Debug(DebugCategory::INSPECTOR_SERVER,
+                     "[inspector io] route message session=%s mergedSession=%s hasWorker=%s existing=%s targetSession=%s\n",
+                     session_id,
+                     merged_session_id,
+                     worker != nullptr,
+                     session != sessions_.end(),
+                     target_session_id_str.value_or(""));
 
   if (session == sessions_.end()) {
     std::unique_ptr<InspectorSession> session;
@@ -406,18 +498,35 @@ void InspectorIoDelegate::MessageReceived(int session_id,
 
     if (session) {
       sessions_[merged_session_id] = std::move(session);
+      per_process::Debug(DebugCategory::INSPECTOR_SERVER,
+                         "[inspector io] connected backend session=%s mergedSession=%s sessions=%s\n",
+                         session_id,
+                         merged_session_id,
+                         sessions_.size());
       sessions_[merged_session_id]->Dispatch(
           Utf8ToStringView(message)->string());
     } else {
       fprintf(stderr, "Failed to connect to inspector session.\n");
     }
   } else {
+    per_process::Debug(DebugCategory::INSPECTOR_SERVER,
+                       "[inspector io] dispatch existing backend session=%s mergedSession=%s\n",
+                       session_id,
+                       merged_session_id);
     session->second->Dispatch(Utf8ToStringView(message)->string());
   }
 }
 
 void InspectorIoDelegate::EndSession(int session_id) {
+  per_process::Debug(DebugCategory::INSPECTOR_SERVER,
+                     "[inspector io] end session=%s before=%s\n",
+                     session_id,
+                     sessions_.size());
   sessions_.erase(session_id);
+  per_process::Debug(DebugCategory::INSPECTOR_SERVER,
+                     "[inspector io] end session=%s after=%s\n",
+                     session_id,
+                     sessions_.size());
 }
 
 std::vector<std::string> InspectorIoDelegate::GetTargetIds() {

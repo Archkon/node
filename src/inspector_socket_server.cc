@@ -1,5 +1,6 @@
 #include "inspector_socket_server.h"
 
+#include "debug_utils-inl.h"
 #include "node.h"
 #include "util-inl.h"
 #include "uv.h"
@@ -278,8 +279,17 @@ SocketSession* InspectorSocketServer::Session(int session_id) {
 void InspectorSocketServer::SessionStarted(int session_id,
                                            const std::string& id,
                                            const std::string& ws_key) {
+  per_process::Debug(DebugCategory::INSPECTOR_SERVER,
+                     "[inspector socket] session start session=%s target=%s key=%s\n",
+                     session_id,
+                     id,
+                     ws_key);
   SocketSession* session = Session(session_id);
   if (!TargetExists(id)) {
+    per_process::Debug(DebugCategory::INSPECTOR_SERVER,
+                       "[inspector socket] session start declined missing target session=%s target=%s\n",
+                       session_id,
+                       id);
     session->Decline();
     return;
   }
@@ -290,9 +300,18 @@ void InspectorSocketServer::SessionStarted(int session_id,
 
 void InspectorSocketServer::SessionTerminated(int session_id) {
   if (Session(session_id) == nullptr) {
+    per_process::Debug(DebugCategory::INSPECTOR_SERVER,
+                       "[inspector socket] session terminated missing session=%s\n",
+                       session_id);
     return;
   }
   bool was_attached = connected_sessions_[session_id].first != "";
+  per_process::Debug(DebugCategory::INSPECTOR_SERVER,
+                     "[inspector socket] session terminated session=%s attached=%s connectedBefore=%s state=%s\n",
+                     session_id,
+                     was_attached,
+                     connected_sessions_.size(),
+                     static_cast<int>(state_));
   if (was_attached) {
     delegate_->EndSession(session_id);
   }
@@ -385,6 +404,10 @@ std::string InspectorSocketServer::GetFrontendURL(bool is_compat,
 }
 
 bool InspectorSocketServer::Start() {
+  per_process::Debug(DebugCategory::INSPECTOR_SERVER,
+                     "[inspector socket] start host=%s port=%s\n",
+                     host_,
+                     port_);
   CHECK_NOT_NULL(delegate_);
   CHECK_EQ(state_, ServerState::kNew);
   std::unique_ptr<SocketServerDelegate> delegate_holder;
@@ -399,6 +422,11 @@ bool InspectorSocketServer::Start() {
   int err = uv_getaddrinfo(loop_, &req, nullptr, host_.c_str(),
                            port_string.c_str(), &hints);
   if (err < 0) {
+    per_process::Debug(DebugCategory::INSPECTOR_SERVER,
+                       "[inspector socket] start resolve failed host=%s port=%s err=%s\n",
+                       host_,
+                       port_,
+                       uv_strerror(err));
     if (out_ != nullptr) {
       fprintf(out_, "Unable to resolve \"%s\": %s\n", host_.c_str(),
               uv_strerror(err));
@@ -417,6 +445,11 @@ bool InspectorSocketServer::Start() {
   // We only show error if we failed to start server on all addresses. We only
   // show one error, for the last address.
   if (server_sockets_.empty()) {
+    per_process::Debug(DebugCategory::INSPECTOR_SERVER,
+                       "[inspector socket] start listen failed host=%s port=%s err=%s\n",
+                       host_,
+                       port_,
+                       uv_strerror(err));
     if (out_ != nullptr) {
       fprintf(out_, "Starting inspector on %s:%d failed: %s\n",
               host_.c_str(), port_, uv_strerror(err));
@@ -432,12 +465,24 @@ bool InspectorSocketServer::Start() {
                             "listening",
                             inspect_publish_uid_.console,
                             out_);
+  per_process::Debug(DebugCategory::INSPECTOR_SERVER,
+                     "[inspector socket] start complete host=%s port=%s sockets=%s\n",
+                     host_,
+                     Port(),
+                     server_sockets_.size());
   return true;
 }
 
 void InspectorSocketServer::Stop() {
-  if (state_ == ServerState::kStopped)
+  if (state_ == ServerState::kStopped) {
+    per_process::Debug(DebugCategory::INSPECTOR_SERVER,
+                       "[inspector socket] stop ignored already stopped\n");
     return;
+  }
+  per_process::Debug(DebugCategory::INSPECTOR_SERVER,
+                     "[inspector socket] stop connected=%s sockets=%s\n",
+                     connected_sessions_.size(),
+                     server_sockets_.size());
   CHECK_EQ(state_, ServerState::kRunning);
   state_ = ServerState::kStopped;
   server_sockets_.clear();
@@ -446,6 +491,9 @@ void InspectorSocketServer::Stop() {
 }
 
 void InspectorSocketServer::TerminateConnections() {
+  per_process::Debug(DebugCategory::INSPECTOR_SERVER,
+                     "[inspector socket] terminate connections count=%s\n",
+                     connected_sessions_.size());
   for (const auto& key_value : connected_sessions_)
     key_value.second.second->Close();
 }
@@ -467,6 +515,11 @@ void InspectorSocketServer::Accept(int server_port,
                                    uv_stream_t* server_socket) {
   std::unique_ptr<SocketSession> session(
       new SocketSession(this, next_session_id_++, server_port));
+  int session_id = session->id();
+  per_process::Debug(DebugCategory::INSPECTOR_SERVER,
+                     "[inspector socket] accept candidate session=%s serverPort=%s\n",
+                     session_id,
+                     server_port);
 
   InspectorSocket::DelegatePointer delegate =
       InspectorSocket::DelegatePointer(
@@ -476,14 +529,31 @@ void InspectorSocketServer::Accept(int server_port,
       InspectorSocket::Accept(server_socket, std::move(delegate));
   if (inspector) {
     session->Own(std::move(inspector));
-    connected_sessions_[session->id()].second = std::move(session);
+    connected_sessions_[session_id].second = std::move(session);
+    per_process::Debug(DebugCategory::INSPECTOR_SERVER,
+                       "[inspector socket] accept complete session=%s connected=%s\n",
+                       session_id,
+                       connected_sessions_.size());
+  } else {
+    per_process::Debug(DebugCategory::INSPECTOR_SERVER,
+                       "[inspector socket] accept failed session=%s\n",
+                       session_id);
   }
 }
 
 void InspectorSocketServer::Send(int session_id, const std::string& message) {
   SocketSession* session = Session(session_id);
   if (session != nullptr) {
+    per_process::Debug(DebugCategory::INSPECTOR_SERVER,
+                       "[inspector socket] send session=%s bytes=%s\n",
+                       session_id,
+                       message.size());
     session->Send(message);
+  } else {
+    per_process::Debug(DebugCategory::INSPECTOR_SERVER,
+                       "[inspector socket] send dropped missing session=%s bytes=%s\n",
+                       session_id,
+                       message.size());
   }
 }
 
@@ -497,11 +567,21 @@ SocketSession::SocketSession(InspectorSocketServer* server, int id,
     : id_(id), server_port_(server_port) {}
 
 void SocketSession::Send(const std::string& message) {
+  per_process::Debug(DebugCategory::INSPECTOR_SERVER,
+                     "[inspector socket] write session=%s bytes=%s %s\n",
+                     id_,
+                     message.length(),
+                     message);
   ws_socket_->Write(message.data(), message.length());
 }
 
 void SocketSession::Delegate::OnHttpGet(const std::string& host,
                                         const std::string& path) {
+  per_process::Debug(DebugCategory::INSPECTOR_SERVER,
+                     "[inspector socket] http get session=%s host=%s path=%s\n",
+                     session_id_,
+                     host,
+                     path);
   if (!server_->HandleGetRequest(session_id_, host, path))
     Session()->ws_socket()->CancelHandshake();
 }
@@ -509,11 +589,21 @@ void SocketSession::Delegate::OnHttpGet(const std::string& host,
 void SocketSession::Delegate::OnSocketUpgrade(const std::string& host,
                                               const std::string& path,
                                               const std::string& ws_key) {
+  per_process::Debug(DebugCategory::INSPECTOR_SERVER,
+                     "[inspector socket] upgrade session=%s host=%s path=%s key=%s\n",
+                     session_id_,
+                     host,
+                     path,
+                     ws_key);
   std::string id = path.empty() ? path : path.substr(1);
   server_->SessionStarted(session_id_, id, ws_key);
 }
 
 void SocketSession::Delegate::OnWsFrame(const std::vector<char>& data) {
+  per_process::Debug(DebugCategory::INSPECTOR_SERVER,
+                     "[inspector socket] frame session=%s bytes=%s\n",
+                     session_id_,
+                     data.size());
   server_->MessageReceived(session_id_,
                            std::string(data.data(), data.size()));
 }

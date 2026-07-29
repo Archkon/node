@@ -54,6 +54,7 @@ function startCLI(args, flags = [], spawnOpts = {}, opts = { randomPort: true })
       `cwd=${spawnOpts.cwd || process.cwd()}`,
       `NODE_DEBUG=${process.env.NODE_DEBUG || ''}`,
       `NODE_DEBUG_NATIVE=${process.env.NODE_DEBUG_NATIVE || ''}`,
+      `NODE_INSPECT_DETAILED_LOG=${process.env.NODE_INSPECT_DETAILED_LOG || ''}`,
       '',
       '--- normalized output ---',
       getOutput(),
@@ -136,6 +137,7 @@ function startCLI(args, flags = [], spawnOpts = {}, opts = { randomPort: true })
         const timeoutErr = new Error(`Timeout (${TIMEOUT}) while waiting for ${pattern}`);
         const timer = setTimeout(() => {
           tearDown();
+          timeoutErr.message += `; found: ${getOutput()}`;
           writeFailureLog(timeoutErr.message);
           timeoutErr.output = this.output;
           reject(timeoutErr);

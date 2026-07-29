@@ -329,11 +329,26 @@ class ChannelImpl final : public v8_inspector::V8Inspector::Channel,
     ConvertJSONToCBOR(crdtp::SpanFrom(raw_message), &cbor_buffer);
     Dispatchable dispatchable(crdtp::SpanFrom(cbor_buffer));
     crdtp::span<uint8_t> method = dispatchable.Method();
+    std::string method_name =
+        method.size() == 0
+            ? std::string()
+            : std::string(reinterpret_cast<const char*>(method.data()),
+                          method.size());
+    per_process::Debug(DebugCategory::INSPECTOR_SERVER,
+                       "[inspector dispatch] method=%s bytes=%s\n",
+                       method_name,
+                       raw_message.size());
     if (v8_inspector::V8InspectorSession::canDispatchMethod(
             StringView(method.data(), method.size()))) {
+      per_process::Debug(DebugCategory::INSPECTOR_SERVER,
+                         "[inspector dispatch] method=%s target=v8\n",
+                         method_name);
       session_->dispatchProtocolMessage(message);
       return;
     }
+    per_process::Debug(DebugCategory::INSPECTOR_SERVER,
+                       "[inspector dispatch] method=%s target=node\n",
+                       method_name);
     UberDispatcher::DispatchResult result =
         node_dispatcher_->Dispatch(dispatchable);
     if (!result.MethodFound()) {
@@ -358,9 +373,17 @@ class ChannelImpl final : public v8_inspector::V8Inspector::Channel,
     return retaining_context_;
   }
 
-  void setWaitingForDebugger() { runtime_agent_->setWaitingForDebugger(); }
+  void setWaitingForDebugger() {
+    per_process::Debug(DebugCategory::INSPECTOR_SERVER,
+                       "[inspector channel] setWaitingForDebugger\n");
+    runtime_agent_->setWaitingForDebugger();
+  }
 
-  void unsetWaitingForDebugger() { runtime_agent_->unsetWaitingForDebugger(); }
+  void unsetWaitingForDebugger() {
+    per_process::Debug(DebugCategory::INSPECTOR_SERVER,
+                       "[inspector channel] unsetWaitingForDebugger\n");
+    runtime_agent_->unsetWaitingForDebugger();
+  }
 
   bool retainingContext() {
     return retaining_context_;
@@ -371,12 +394,17 @@ class ChannelImpl final : public v8_inspector::V8Inspector::Channel,
   void sendResponse(
       int callId,
       std::unique_ptr<v8_inspector::StringBuffer> message) override {
+    per_process::Debug(DebugCategory::INSPECTOR_SERVER,
+                       "[inspector channel] sendResponse callId=%s\n",
+                       callId);
     sendMessageToFrontend(message->string());
   }
 
   // v8_inspector::V8Inspector::Channel
   void sendNotification(
       std::unique_ptr<v8_inspector::StringBuffer> message) override {
+    per_process::Debug(DebugCategory::INSPECTOR_SERVER,
+                       "[inspector channel] sendNotification\n");
     sendMessageToFrontend(message->string());
   }
 
@@ -531,21 +559,41 @@ class NodeInspectorClient : public V8InspectorClient {
   }
 
   void runMessageLoopOnPause(int context_group_id) override {
+    per_process::Debug(DebugCategory::INSPECTOR_CLIENT,
+                       "[inspector client] runMessageLoopOnPause begin context=%s channels=%s\n",
+                       context_group_id,
+                       channels_.size());
     waiting_for_resume_ = true;
     runMessageLoop();
+    per_process::Debug(DebugCategory::INSPECTOR_CLIENT,
+                       "[inspector client] runMessageLoopOnPause end context=%s channels=%s\n",
+                       context_group_id,
+                       channels_.size());
   }
 
   void waitForSessionsDisconnect() {
+    per_process::Debug(DebugCategory::INSPECTOR_CLIENT,
+                       "[inspector client] waitForSessionsDisconnect begin channels=%s\n",
+                       channels_.size());
     waiting_for_sessions_disconnect_ = true;
     runMessageLoop();
+    per_process::Debug(DebugCategory::INSPECTOR_CLIENT,
+                       "[inspector client] waitForSessionsDisconnect end channels=%s\n",
+                       channels_.size());
   }
 
   void waitForFrontend() {
+    per_process::Debug(DebugCategory::INSPECTOR_CLIENT,
+                       "[inspector client] waitForFrontend begin channels=%s\n",
+                       channels_.size());
     waiting_for_frontend_ = true;
     for (const auto& id_channel : channels_) {
       id_channel.second->setWaitingForDebugger();
     }
     runMessageLoop();
+    per_process::Debug(DebugCategory::INSPECTOR_CLIENT,
+                       "[inspector client] waitForFrontend end channels=%s\n",
+                       channels_.size());
   }
 
   void maxAsyncCallStackDepthChanged(int depth) override {
@@ -587,10 +635,17 @@ class NodeInspectorClient : public V8InspectorClient {
   }
 
   void quitMessageLoopOnPause() override {
+    per_process::Debug(DebugCategory::INSPECTOR_CLIENT,
+                       "[inspector client] quitMessageLoopOnPause\n");
     waiting_for_resume_ = false;
   }
 
   void runIfWaitingForDebugger(int context_group_id) override {
+    per_process::Debug(DebugCategory::INSPECTOR_CLIENT,
+                       "[inspector client] runIfWaitingForDebugger context=%s channels=%s waitingFrontend=%s\n",
+                       context_group_id,
+                       channels_.size(),
+                       waiting_for_frontend_);
     waiting_for_frontend_ = false;
     for (const auto& id_channel : channels_) {
       id_channel.second->unsetWaitingForDebugger();
@@ -616,6 +671,12 @@ class NodeInspectorClient : public V8InspectorClient {
   int connectFrontend(std::unique_ptr<InspectorSessionDelegate> delegate,
                       bool prevent_shutdown) {
     int session_id = next_session_id_++;
+    per_process::Debug(DebugCategory::INSPECTOR_CLIENT,
+                       "[inspector client] connectFrontend session=%s preventShutdown=%s channelsBefore=%s waitingFrontend=%s\n",
+                       session_id,
+                       prevent_shutdown,
+                       channels_.size(),
+                       waiting_for_frontend_);
     channels_[session_id] = std::make_unique<ChannelImpl>(env_,
                                                           client_,
                                                           getWorkerManager(),
@@ -625,15 +686,32 @@ class NodeInspectorClient : public V8InspectorClient {
     if (waiting_for_frontend_) {
       channels_[session_id]->setWaitingForDebugger();
     }
+    per_process::Debug(DebugCategory::INSPECTOR_CLIENT,
+                       "[inspector client] connectFrontend complete session=%s channelsAfter=%s\n",
+                       session_id,
+                       channels_.size());
     return session_id;
   }
 
   void disconnectFrontend(int session_id) {
+    per_process::Debug(DebugCategory::INSPECTOR_CLIENT,
+                       "[inspector client] disconnectFrontend session=%s channelsBefore=%s\n",
+                       session_id,
+                       channels_.size());
     auto it = channels_.find(session_id);
-    if (it == channels_.end())
+    if (it == channels_.end()) {
+      per_process::Debug(DebugCategory::INSPECTOR_CLIENT,
+                         "[inspector client] disconnectFrontend missing session=%s\n",
+                         session_id);
       return;
+    }
     bool retaining_context = it->second->retainingContext();
     channels_.erase(it);
+    per_process::Debug(DebugCategory::INSPECTOR_CLIENT,
+                       "[inspector client] disconnectFrontend erased session=%s retainingContext=%s channelsAfter=%s\n",
+                       session_id,
+                       retaining_context,
+                       channels_.size());
     if (retaining_context) {
       for (const auto& id_channel : channels_) {
         if (id_channel.second->retainingContext())
@@ -646,6 +724,10 @@ class NodeInspectorClient : public V8InspectorClient {
   }
 
   void dispatchMessageFromFrontend(int session_id, const StringView& message) {
+    per_process::Debug(DebugCategory::INSPECTOR_CLIENT,
+                       "[inspector client] dispatchMessageFromFrontend session=%s bytes=%s\n",
+                       session_id,
+                       message.length());
     channels_[session_id]->dispatchProtocolMessage(message);
   }
 

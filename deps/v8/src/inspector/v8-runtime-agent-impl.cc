@@ -32,6 +32,10 @@
 
 #include <inttypes.h>
 
+#include <cstdarg>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <memory>
 
 #include "../../third_party/inspector_protocol/crdtp/json.h"
@@ -70,6 +74,27 @@ static const char globalBindings[] = "globalBindings";
 using protocol::Runtime::RemoteObject;
 
 namespace {
+
+bool InspectorDetailedLogEnabled() {
+  static const bool enabled = [] {
+    const char* value = std::getenv("NODE_INSPECT_DETAILED_LOG");
+    return value != nullptr && std::strcmp(value, "0") != 0 &&
+           std::strcmp(value, "false") != 0 &&
+           std::strcmp(value, "FALSE") != 0;
+  }();
+  return enabled;
+}
+
+void InspectorDetailedLog(const char* format, ...) {
+  if (!InspectorDetailedLogEnabled()) return;
+
+  std::fprintf(stderr, "[v8 inspector detailed] ");
+  va_list args;
+  va_start(args, format);
+  std::vfprintf(stderr, format, args);
+  va_end(args);
+  std::fprintf(stderr, "\n");
+}
 
 template <typename ProtocolCallback>
 class EvaluateCallbackWrapper : public EvaluateCallback {
@@ -637,14 +662,24 @@ Response V8RuntimeAgentImpl::releaseObjectGroup(const String16& objectGroup) {
 }
 
 Response V8RuntimeAgentImpl::runIfWaitingForDebugger() {
+  InspectorDetailedLog(
+      "Runtime.runIfWaitingForDebugger contextGroup=%d hasBarrier=%d",
+      m_session->contextGroupId(), m_debuggerBarrier ? 1 : 0);
   if (m_debuggerBarrier) {
     m_debuggerBarrier.reset();
+    InspectorDetailedLog(
+        "Runtime.runIfWaitingForDebugger satisfied debugger barrier "
+        "contextGroup=%d",
+        m_session->contextGroupId());
     return Response::Success();
   }
   // TODO(chromium:1352175): the below is provisional until client-side changes
   // land. The call should come through the barrier only once client properly
   // communicates whether the session is waiting for debugger.
   m_inspector->client()->runIfWaitingForDebugger(m_session->contextGroupId());
+  InspectorDetailedLog(
+      "Runtime.runIfWaitingForDebugger notified embedder contextGroup=%d",
+      m_session->contextGroupId());
   return Response::Success();
 }
 

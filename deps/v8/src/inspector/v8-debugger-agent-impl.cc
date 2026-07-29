@@ -5,6 +5,10 @@
 #include "src/inspector/v8-debugger-agent-impl.h"
 
 #include <algorithm>
+#include <cstdarg>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <memory>
 
 #include "../../third_party/inspector_protocol/crdtp/json.h"
@@ -91,6 +95,27 @@ static constexpr const char kWasmBytecodeExceedsTransferLimit[] =
 #endif  // V8_ENABLE_WEBASSEMBLY
 
 namespace {
+
+bool InspectorDetailedLogEnabled() {
+  static const bool enabled = [] {
+    const char* value = std::getenv("NODE_INSPECT_DETAILED_LOG");
+    return value != nullptr && std::strcmp(value, "0") != 0 &&
+           std::strcmp(value, "false") != 0 &&
+           std::strcmp(value, "FALSE") != 0;
+  }();
+  return enabled;
+}
+
+void InspectorDetailedLog(const char* format, ...) {
+  if (!InspectorDetailedLogEnabled()) return;
+
+  std::fprintf(stderr, "[v8 inspector detailed] ");
+  va_list args;
+  va_start(args, format);
+  std::vfprintf(stderr, format, args);
+  va_end(args);
+  std::fprintf(stderr, "\n");
+}
 
 enum class BreakpointType {
   kByUrl = 1,
@@ -1552,6 +1577,12 @@ Response V8DebuggerAgentImpl::pauseOnAsyncCall(
 Response V8DebuggerAgentImpl::setPauseOnExceptions(
     const String16& stringPauseState) {
   if (!enabled()) return Response::ServerError(kDebuggerNotEnabled);
+  std::string requestedState = stringPauseState.utf8();
+  InspectorDetailedLog(
+      "Debugger.setPauseOnExceptions request session=%d contextGroup=%d "
+      "state=%s",
+      m_session->sessionId(), m_session->contextGroupId(),
+      requestedState.c_str());
   v8::debug::ExceptionBreakState pauseState;
   if (stringPauseState == "none") {
     pauseState = v8::debug::NoBreakOnException;
@@ -1566,6 +1597,11 @@ Response V8DebuggerAgentImpl::setPauseOnExceptions(
                                  stringPauseState.utf8());
   }
   setPauseOnExceptionsImpl(pauseState);
+  InspectorDetailedLog(
+      "Debugger.setPauseOnExceptions complete session=%d contextGroup=%d "
+      "state=%s enum=%d",
+      m_session->sessionId(), m_session->contextGroupId(),
+      requestedState.c_str(), pauseState);
   return Response::Success();
 }
 
@@ -1575,6 +1611,9 @@ void V8DebuggerAgentImpl::setPauseOnExceptionsImpl(int pauseState) {
   m_debugger->setPauseOnExceptionsState(
       static_cast<v8::debug::ExceptionBreakState>(pauseState));
   m_state->setInteger(DebuggerAgentState::pauseOnExceptionsState, pauseState);
+  InspectorDetailedLog(
+      "Debugger.setPauseOnExceptionsImpl session=%d contextGroup=%d enum=%d",
+      m_session->sessionId(), m_session->contextGroupId(), pauseState);
 }
 
 Response V8DebuggerAgentImpl::evaluateOnCallFrame(
@@ -2141,6 +2180,10 @@ void V8DebuggerAgentImpl::setScriptInstrumentationBreakpointIfNeeded(
 
 void V8DebuggerAgentImpl::didPauseOnInstrumentation(
     v8::debug::BreakpointId instrumentationId) {
+  InspectorDetailedLog(
+      "Debugger.didPauseOnInstrumentation begin session=%d contextGroup=%d "
+      "instrumentationId=%d",
+      m_session->sessionId(), m_session->contextGroupId(), instrumentationId);
   String16 breakReason = protocol::Debugger::Paused::ReasonEnum::Other;
   std::unique_ptr<protocol::DictionaryValue> breakAuxData;
 
@@ -2169,10 +2212,19 @@ void V8DebuggerAgentImpl::didPauseOnInstrumentation(
     }
   }
 
+  std::string breakReasonUtf8 = breakReason.utf8();
+  InspectorDetailedLog(
+      "Debugger.didPauseOnInstrumentation frontend.paused session=%d "
+      "contextGroup=%d reason=%s frames=%zu",
+      m_session->sessionId(), m_session->contextGroupId(),
+      breakReasonUtf8.c_str(), protocolCallFrames->size());
   m_frontend.paused(std::move(protocolCallFrames), breakReason,
                     std::move(breakAuxData),
                     std::make_unique<Array<String16>>(),
                     currentAsyncStackTrace(), currentExternalStackTrace());
+  InspectorDetailedLog(
+      "Debugger.didPauseOnInstrumentation sent session=%d contextGroup=%d",
+      m_session->sessionId(), m_session->contextGroupId());
 }
 
 void V8DebuggerAgentImpl::didPause(
@@ -2181,6 +2233,11 @@ void V8DebuggerAgentImpl::didPause(
     v8::debug::ExceptionType exceptionType, bool isUncaught,
     v8::debug::BreakReasons breakReasons) {
   v8::HandleScope handles(m_isolate);
+  InspectorDetailedLog(
+      "Debugger.didPause begin session=%d contextGroup=%d contextId=%d "
+      "hitBreakpoints=%zu exceptionType=%d isUncaught=%d",
+      m_session->sessionId(), m_session->contextGroupId(), contextId,
+      hitBreakpoints.size(), exceptionType, isUncaught ? 1 : 0);
 
   std::vector<BreakReason> hitReasons;
 
@@ -2286,14 +2343,28 @@ void V8DebuggerAgentImpl::didPause(
   if (!response.IsSuccess())
     protocolCallFrames = std::make_unique<Array<CallFrame>>();
 
+  std::string breakReasonUtf8 = breakReason.utf8();
+  InspectorDetailedLog(
+      "Debugger.didPause frontend.paused session=%d contextGroup=%d "
+      "reason=%s frames=%zu hitBreakpointIds=%zu",
+      m_session->sessionId(), m_session->contextGroupId(),
+      breakReasonUtf8.c_str(), protocolCallFrames->size(),
+      hitBreakpointIds->size());
   m_frontend.paused(std::move(protocolCallFrames), breakReason,
                     std::move(breakAuxData), std::move(hitBreakpointIds),
                     currentAsyncStackTrace(), currentExternalStackTrace());
+  InspectorDetailedLog(
+      "Debugger.didPause sent session=%d contextGroup=%d",
+      m_session->sessionId(), m_session->contextGroupId());
 }
 
 void V8DebuggerAgentImpl::didContinue() {
+  InspectorDetailedLog("Debugger.didContinue session=%d contextGroup=%d",
+                       m_session->sessionId(), m_session->contextGroupId());
   m_frontend.resumed();
   m_frontend.flush();
+  InspectorDetailedLog("Debugger.didContinue flushed session=%d contextGroup=%d",
+                       m_session->sessionId(), m_session->contextGroupId());
 }
 
 void V8DebuggerAgentImpl::breakProgram(

@@ -117,6 +117,7 @@ function expectSyncExit(caller, spawnArgs, {
       `signal=${child.signal}`,
       `NODE_DEBUG=${process.env.NODE_DEBUG || ''}`,
       `NODE_DEBUG_NATIVE=${process.env.NODE_DEBUG_NATIVE || ''}`,
+      `NODE_INSPECT_DETAILED_LOG=${process.env.NODE_INSPECT_DETAILED_LOG || ''}`,
       '',
       '--- failures ---',
       failures.join('\n'),

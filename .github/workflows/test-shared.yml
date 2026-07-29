@@ -109,6 +109,7 @@ env:
   NODE_DEBUG: inspect,inspect_probe
   NODE_DEBUG_NATIVE: inspector,inspector_profiler
   NODE_INSPECT_DEBUG_LOG_DIR: ${{ github.workspace }}/workflow-logs/inspect-debug
+  NODE_INSPECT_DETAILED_LOG: '1'
 
 jobs:
   build-tarball:
@@ -128,6 +129,7 @@ jobs:
             echo "NODE_DEBUG=$NODE_DEBUG"
             echo "NODE_DEBUG_NATIVE=$NODE_DEBUG_NATIVE"
             echo "NODE_INSPECT_DEBUG_LOG_DIR=$NODE_INSPECT_DEBUG_LOG_DIR"
+            echo "NODE_INSPECT_DETAILED_LOG=$NODE_INSPECT_DETAILED_LOG"
             export DATESTRING=$(date "+%Y-%m-%d")
             export COMMIT=$(git rev-parse --short=10 "$GITHUB_SHA")
             ./configure && make tar -j4 SKIP_XZ=1 SKIP_SHARED_DEPS=1
@@ -156,6 +158,7 @@ jobs:
             echo "NODE_DEBUG=$NODE_DEBUG"
             echo "NODE_DEBUG_NATIVE=$NODE_DEBUG_NATIVE"
             echo "NODE_INSPECT_DEBUG_LOG_DIR=$NODE_INSPECT_DEBUG_LOG_DIR"
+            echo "NODE_INSPECT_DETAILED_LOG=$NODE_INSPECT_DETAILED_LOG"
             date -u '+utc=%Y-%m-%dT%H:%M:%SZ'
             uname -a || true
             ulimit -a || true
@@ -283,6 +286,7 @@ jobs:
             echo "NODE_DEBUG=$NODE_DEBUG"
             echo "NODE_DEBUG_NATIVE=$NODE_DEBUG_NATIVE"
             echo "NODE_INSPECT_DEBUG_LOG_DIR=$NODE_INSPECT_DEBUG_LOG_DIR"
+            echo "NODE_INSPECT_DETAILED_LOG=$NODE_INSPECT_DETAILED_LOG"
             date -u '+utc=%Y-%m-%dT%H:%M:%SZ'
             uname -a || true
             ulimit -a || true

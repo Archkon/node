@@ -5,6 +5,10 @@
 #include "src/inspector/v8-debugger.h"
 
 #include <algorithm>
+#include <cstdarg>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 
 #include "include/v8-container.h"
 #include "include/v8-context.h"
@@ -32,6 +36,27 @@ namespace {
 static const size_t kMaxAsyncTaskStacks = 8 * 1024;
 static const size_t kMaxExternalParents = 1 * 1024;
 static const int kNoBreakpointId = 0;
+
+bool InspectorDetailedLogEnabled() {
+  static const bool enabled = [] {
+    const char* value = std::getenv("NODE_INSPECT_DETAILED_LOG");
+    return value != nullptr && std::strcmp(value, "0") != 0 &&
+           std::strcmp(value, "false") != 0 &&
+           std::strcmp(value, "FALSE") != 0;
+  }();
+  return enabled;
+}
+
+void InspectorDetailedLog(const char* format, ...) {
+  if (!InspectorDetailedLogEnabled()) return;
+
+  std::fprintf(stderr, "[v8 inspector detailed] ");
+  va_list args;
+  va_start(args, format);
+  std::vfprintf(stderr, format, args);
+  va_end(args);
+  std::fprintf(stderr, "\n");
+}
 
 template <typename Map>
 void cleanupExpiredWeakPointers(Map& map) {
@@ -474,10 +499,22 @@ void V8Debugger::handleProgramBreak(
     v8::debug::BreakReasons breakReasons,
     v8::debug::ExceptionType exceptionType, bool isUncaught) {
   // Don't allow nested breaks.
-  if (isPaused()) return;
+  if (isPaused()) {
+    InspectorDetailedLog("V8Debugger.handleProgramBreak ignored nested pause");
+    return;
+  }
 
   int contextGroupId = m_inspector->contextGroupId(pausedContext);
+  InspectorDetailedLog(
+      "V8Debugger.handleProgramBreak begin contextGroup=%d breakpoints=%zu "
+      "exceptionType=%d isUncaught=%d targetContext=%d",
+      contextGroupId, breakpointIds.size(), exceptionType, isUncaught ? 1 : 0,
+      m_targetContextGroupId);
   if (m_targetContextGroupId && contextGroupId != m_targetContextGroupId) {
+    InspectorDetailedLog(
+        "V8Debugger.handleProgramBreak stepping out due target mismatch "
+        "contextGroup=%d targetContext=%d",
+        contextGroupId, m_targetContextGroupId);
     v8::debug::PrepareStep(m_isolate, v8::debug::StepOut);
     return;
   }
@@ -506,10 +543,23 @@ void V8Debugger::handleProgramBreak(
   m_inspector->forEachSession(
       contextGroupId,
       [&scheduledOOMBreak, &hasAgents](V8InspectorSessionImpl* session) {
-        if (session->debuggerAgent()->acceptsPause(scheduledOOMBreak))
+        bool acceptsPause =
+            session->debuggerAgent()->acceptsPause(scheduledOOMBreak);
+        InspectorDetailedLog(
+            "V8Debugger.handleProgramBreak check session=%d acceptsPause=%d "
+            "scheduledOOM=%d",
+            session->sessionId(), acceptsPause ? 1 : 0,
+            scheduledOOMBreak ? 1 : 0);
+        if (acceptsPause)
           hasAgents = true;
       });
-  if (!hasAgents) return;
+  if (!hasAgents) {
+    InspectorDetailedLog(
+        "V8Debugger.handleProgramBreak ignored no accepting agents "
+        "contextGroup=%d scheduledOOM=%d",
+        contextGroupId, scheduledOOMBreak ? 1 : 0);
+    return;
+  }
 
   if (breakpointIds.size() == 1 &&
       breakpointIds[0] == m_continueToLocationBreakpointId) {
@@ -526,6 +576,10 @@ void V8Debugger::handleProgramBreak(
       [&pausedContext, &exception, &breakpointIds, &exceptionType, &isUncaught,
        &scheduledOOMBreak, &breakReasons](V8InspectorSessionImpl* session) {
         if (session->debuggerAgent()->acceptsPause(scheduledOOMBreak)) {
+          InspectorDetailedLog(
+              "V8Debugger.handleProgramBreak dispatch didPause session=%d "
+              "contextGroup=%d",
+              session->sessionId(), session->contextGroupId());
           session->debuggerAgent()->didPause(
               InspectedContext::contextId(pausedContext), exception,
               breakpointIds, exceptionType, isUncaught, breakReasons);
@@ -541,12 +595,26 @@ void V8Debugger::handleProgramBreak(
           }
         });
 
+    InspectorDetailedLog(
+        "V8Debugger.handleProgramBreak entering embedder pause loop "
+        "contextGroup=%d",
+        contextGroupId);
     m_inspector->client()->runMessageLoopOnPause(contextGroupId);
+    InspectorDetailedLog(
+        "V8Debugger.handleProgramBreak embedder pause loop returned "
+        "contextGroup=%d",
+        contextGroupId);
     m_pausedContextGroupId = 0;
   }
   m_inspector->forEachSession(contextGroupId,
                               [](V8InspectorSessionImpl* session) {
                                 if (session->debuggerAgent()->enabled()) {
+                                  InspectorDetailedLog(
+                                      "V8Debugger.handleProgramBreak "
+                                      "dispatch didContinue session=%d "
+                                      "contextGroup=%d",
+                                      session->sessionId(),
+                                      session->contextGroupId());
                                   session->debuggerAgent()->clearBreakDetails();
                                   session->debuggerAgent()->didContinue();
                                 }

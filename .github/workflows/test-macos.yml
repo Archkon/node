@@ -64,6 +64,7 @@ env:
   RUSTC_VERSION: '1.86'
   NODE_DEBUG: inspect,inspect_probe
   NODE_DEBUG_NATIVE: inspector,inspector_profiler
+  NODE_INSPECT_DETAILED_LOG: '1'
 
 permissions:
   contents: read
@@ -132,6 +133,7 @@ jobs:
             echo "NODE_DEBUG=$NODE_DEBUG"
             echo "NODE_DEBUG_NATIVE=$NODE_DEBUG_NATIVE"
             echo "NODE_INSPECT_DEBUG_LOG_DIR=$NODE_INSPECT_DEBUG_LOG_DIR"
+            echo "NODE_INSPECT_DETAILED_LOG=$NODE_INSPECT_DETAILED_LOG"
             make -C node build-ci -j$(getconf _NPROCESSORS_ONLN) V=1 CONFIG_FLAGS="--error-on-warn --v8-enable-temporal-support"
           } 2>&1 | tee "$LOG_DIR/build.log"
       - name: Free Space After Build
@@ -144,6 +146,7 @@ jobs:
             echo "NODE_DEBUG=$NODE_DEBUG"
             echo "NODE_DEBUG_NATIVE=$NODE_DEBUG_NATIVE"
             echo "NODE_INSPECT_DEBUG_LOG_DIR=$NODE_INSPECT_DEBUG_LOG_DIR"
+            echo "NODE_INSPECT_DETAILED_LOG=$NODE_INSPECT_DETAILED_LOG"
             make -C node test-ci -j1 V=1 TEST_CI_ARGS="-p actions --measure-flakiness 9"
           } 2>&1 |
             tee "$LOG_DIR/test-ci.log"
@@ -158,6 +161,7 @@ jobs:
             echo "NODE_DEBUG=$NODE_DEBUG"
             echo "NODE_DEBUG_NATIVE=$NODE_DEBUG_NATIVE"
             echo "NODE_INSPECT_DEBUG_LOG_DIR=$NODE_INSPECT_DEBUG_LOG_DIR"
+            echo "NODE_INSPECT_DETAILED_LOG=$NODE_INSPECT_DETAILED_LOG"
             python3 ./tools/test.py --flaky-tests keep_retrying -p actions -j 4
           } 2>&1 |
             tee "$LOG_DIR/unusual-path-test.log"
@@ -178,6 +182,7 @@ jobs:
             echo "NODE_DEBUG=$NODE_DEBUG"
             echo "NODE_DEBUG_NATIVE=$NODE_DEBUG_NATIVE"
             echo "NODE_INSPECT_DEBUG_LOG_DIR=$NODE_INSPECT_DEBUG_LOG_DIR"
+            echo "NODE_INSPECT_DETAILED_LOG=$NODE_INSPECT_DETAILED_LOG"
             date -u '+utc=%Y-%m-%dT%H:%M:%SZ'
             uname -a || true
             ulimit -a || true
