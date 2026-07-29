@@ -106,6 +106,8 @@ permissions:
 
 env:
   LOG_DIR: ${{ github.workspace }}/workflow-logs
+  NODE_DEBUG: inspect,inspect_probe
+  NODE_DEBUG_NATIVE: inspector,inspector_profiler
 
 jobs:
   build-tarball:
@@ -122,6 +124,8 @@ jobs:
           set -o pipefail
           mkdir -p "$LOG_DIR"
           {
+            echo "NODE_DEBUG=$NODE_DEBUG"
+            echo "NODE_DEBUG_NATIVE=$NODE_DEBUG_NATIVE"
             export DATESTRING=$(date "+%Y-%m-%d")
             export COMMIT=$(git rev-parse --short=10 "$GITHUB_SHA")
             ./configure && make tar -j4 SKIP_XZ=1 SKIP_SHARED_DEPS=1
@@ -147,7 +151,11 @@ jobs:
             echo "runner.name=${{ runner.name }}"
             echo "github.run_id=${{ github.run_id }}"
             echo "github.run_attempt=${{ github.run_attempt }}"
+            echo "NODE_DEBUG=$NODE_DEBUG"
+            echo "NODE_DEBUG_NATIVE=$NODE_DEBUG_NATIVE"
             date -u '+utc=%Y-%m-%dT%H:%M:%SZ'
+            uname -a || true
+            ulimit -a || true
             pwd
             df -h || true
           } > "$LOG_DIR/diagnostics.txt"
@@ -268,7 +276,11 @@ jobs:
             echo "runner.name=${{ runner.name }}"
             echo "github.run_id=${{ github.run_id }}"
             echo "github.run_attempt=${{ github.run_attempt }}"
+            echo "NODE_DEBUG=$NODE_DEBUG"
+            echo "NODE_DEBUG_NATIVE=$NODE_DEBUG_NATIVE"
             date -u '+utc=%Y-%m-%dT%H:%M:%SZ'
+            uname -a || true
+            ulimit -a || true
             pwd
             df -h || true
           } > "$LOG_DIR/diagnostics.txt"

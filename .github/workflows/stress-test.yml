@@ -37,6 +37,8 @@ env:
   XCODE_VERSION: '16.4'
   CLANG_VERSION: '19'
   RUSTC_VERSION: '1.86'
+  NODE_DEBUG: inspect,inspect_probe
+  NODE_DEBUG_NATIVE: inspector,inspector_profiler
 
 permissions:
   contents: read
@@ -99,7 +101,11 @@ jobs:
         run: |
           set -o pipefail
           mkdir -p "$LOG_DIR"
-          make -C node build-ci -j"$(getconf _NPROCESSORS_ONLN)" V=1 CONFIG_FLAGS="--error-on-warn --v8-enable-temporal-support" 2>&1 |
+          {
+            echo "NODE_DEBUG=$NODE_DEBUG"
+            echo "NODE_DEBUG_NATIVE=$NODE_DEBUG_NATIVE"
+            make -C node build-ci -j"$(getconf _NPROCESSORS_ONLN)" V=1 CONFIG_FLAGS="--error-on-warn --v8-enable-temporal-support"
+          } 2>&1 |
             tee "$LOG_DIR/build.log"
       - name: Stress run ${{ inputs.test_path }} x${{ inputs.repeat }}
         shell: bash
@@ -113,12 +119,20 @@ jobs:
           mkdir -p "$LOG_DIR"
           cd node
           read -ra EXTRA_ARGS <<< "$TEST_ARGS"
-          python3 tools/test.py \
-            --repeat "$REPEAT" \
-            -j "$JOBS" \
-            -p actions \
-            "${EXTRA_ARGS[@]}" \
-            "$TEST_PATH" 2>&1 |
+          {
+            echo "TEST_PATH=$TEST_PATH"
+            echo "REPEAT=$REPEAT"
+            echo "JOBS=$JOBS"
+            echo "TEST_ARGS=$TEST_ARGS"
+            echo "NODE_DEBUG=$NODE_DEBUG"
+            echo "NODE_DEBUG_NATIVE=$NODE_DEBUG_NATIVE"
+            python3 tools/test.py \
+              --repeat "$REPEAT" \
+              -j "$JOBS" \
+              -p actions \
+              "${EXTRA_ARGS[@]}" \
+              "$TEST_PATH"
+          } 2>&1 |
             tee "$LOG_DIR/stress-test.log"
       - name: Collect workflow diagnostics
         if: always()
@@ -133,7 +147,11 @@ jobs:
             echo "runner.name=${{ runner.name }}"
             echo "github.run_id=${{ github.run_id }}"
             echo "github.run_attempt=${{ github.run_attempt }}"
+            echo "NODE_DEBUG=$NODE_DEBUG"
+            echo "NODE_DEBUG_NATIVE=$NODE_DEBUG_NATIVE"
             date -u '+utc=%Y-%m-%dT%H:%M:%SZ'
+            uname -a || true
+            ulimit -a || true
             pwd
             df -h || true
           } > "$LOG_DIR/diagnostics.txt"
