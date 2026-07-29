@@ -31,6 +31,7 @@ permissions: {}
 
 env:
   FLAKY_TESTS: keep_retrying
+  LOG_DIR: ${{ github.workspace }}/workflow-logs
 
 jobs:
   build:
@@ -76,6 +77,8 @@ jobs:
       - name: Build Node.js and run tests
         shell: bash
         run: |
+          set -o pipefail
+          mkdir -p "$LOG_DIR"
           nix-shell \
             -I "nixpkgs=$TAR_DIR/tools/nix/pkgs.nix" \
             --pure --keep TAR_DIR --keep FLAKY_TESTS \
@@ -87,4 +90,34 @@ jobs:
             ${{ inputs.extra-nix-flags }} \
             --run '
                 make -C "$TAR_DIR" run-ci -j4 V=1 TEST_CI_ARGS="-p actions --measure-flakiness 9 --skip-tests=$CI_SKIP_TESTS"
-            ' "$TAR_DIR/shell.nix"
+            ' "$TAR_DIR/shell.nix" 2>&1 |
+            tee "$LOG_DIR/build-shared.log"
+
+      - name: Collect workflow diagnostics
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p "$LOG_DIR"
+          {
+            echo "workflow=${{ github.workflow }}"
+            echo "job=${{ github.job }}"
+            echo "runner.os=${{ runner.os }}"
+            echo "runner.arch=${{ runner.arch }}"
+            echo "runner.name=${{ runner.name }}"
+            echo "github.run_id=${{ github.run_id }}"
+            echo "github.run_attempt=${{ github.run_attempt }}"
+            date -u '+utc=%Y-%m-%dT%H:%M:%SZ'
+            pwd
+            df -h || true
+          } > "$LOG_DIR/diagnostics.txt"
+          if [ -d "$HOME/Library/Logs/DiagnosticReports" ]; then
+            mkdir -p "$LOG_DIR/DiagnosticReports"
+            cp -R "$HOME/Library/Logs/DiagnosticReports/." "$LOG_DIR/DiagnosticReports/" || true
+          fi
+
+      - name: Upload workflow logs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: shared-build-logs-${{ inputs.runner }}-${{ runner.os }}-${{ runner.arch }}-${{ runner.name }}
+          path: ${{ env.LOG_DIR }}
