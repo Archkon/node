@@ -165,7 +165,8 @@ class CrossThreadInspectorSession : public InspectorSession {
       std::shared_ptr<MainThreadHandle> thread,
       std::unique_ptr<InspectorSessionDelegate> delegate,
       bool prevent_shutdown)
-      : state_(thread, std::bind(MainThreadSessionState::Create,
+      : id_(id),
+        state_(thread, std::bind(MainThreadSessionState::Create,
                                  std::placeholders::_1,
                                  prevent_shutdown)) {
     state_.Call(&MainThreadSessionState::Connect, std::move(delegate));
@@ -178,6 +179,7 @@ class CrossThreadInspectorSession : public InspectorSession {
   }
 
  private:
+  const int id_;
   AnotherThreadObjectReference<MainThreadSessionState> state_;
 };
 
