@@ -106,10 +106,17 @@ permissions:
 
 env:
   LOG_DIR: ${{ github.workspace }}/workflow-logs
-  NODE_DEBUG: inspect,inspect_probe
-  NODE_DEBUG_NATIVE: inspector,inspector_profiler
+  NODE_DEBUG: ''
+  NODE_DEBUG_NATIVE: ''
   NODE_INSPECT_DEBUG_LOG_DIR: ${{ github.workspace }}/workflow-logs/inspect-debug
-  NODE_INSPECT_DETAILED_LOG: '1'
+  NODE_INSPECT_DETAILED_LOG: '0'
+  NODE_INSPECT_TRACE: '1'
+  NODE_INSPECT_TRACE_LIMIT: '512'
+  NODE_INSPECT_TRACE_REPORT: '1'
+  NODE_INSPECT_TRACE_DUMP_ON_SIGNAL: '1'
+  NODE_INSPECT_NATIVE_TRACE_DUMP_ON_SIGNAL: '0'
+  NODE_INSPECT_TRACE_DUMP_ON_EXIT: '0'
+  NODE_INSPECT_TRACE_DUMP_ON_WAIT: '1'
 
 jobs:
   build-tarball:
@@ -130,6 +137,13 @@ jobs:
             echo "NODE_DEBUG_NATIVE=$NODE_DEBUG_NATIVE"
             echo "NODE_INSPECT_DEBUG_LOG_DIR=$NODE_INSPECT_DEBUG_LOG_DIR"
             echo "NODE_INSPECT_DETAILED_LOG=$NODE_INSPECT_DETAILED_LOG"
+            echo "NODE_INSPECT_TRACE=$NODE_INSPECT_TRACE"
+            echo "NODE_INSPECT_TRACE_LIMIT=$NODE_INSPECT_TRACE_LIMIT"
+            echo "NODE_INSPECT_TRACE_REPORT=$NODE_INSPECT_TRACE_REPORT"
+            echo "NODE_INSPECT_TRACE_DUMP_ON_SIGNAL=$NODE_INSPECT_TRACE_DUMP_ON_SIGNAL"
+            echo "NODE_INSPECT_NATIVE_TRACE_DUMP_ON_SIGNAL=$NODE_INSPECT_NATIVE_TRACE_DUMP_ON_SIGNAL"
+            echo "NODE_INSPECT_TRACE_DUMP_ON_EXIT=$NODE_INSPECT_TRACE_DUMP_ON_EXIT"
+            echo "NODE_INSPECT_TRACE_DUMP_ON_WAIT=$NODE_INSPECT_TRACE_DUMP_ON_WAIT"
             export DATESTRING=$(date "+%Y-%m-%d")
             export COMMIT=$(git rev-parse --short=10 "$GITHUB_SHA")
             ./configure && make tar -j4 SKIP_XZ=1 SKIP_SHARED_DEPS=1
@@ -159,12 +173,26 @@ jobs:
             echo "NODE_DEBUG_NATIVE=$NODE_DEBUG_NATIVE"
             echo "NODE_INSPECT_DEBUG_LOG_DIR=$NODE_INSPECT_DEBUG_LOG_DIR"
             echo "NODE_INSPECT_DETAILED_LOG=$NODE_INSPECT_DETAILED_LOG"
+            echo "NODE_INSPECT_TRACE=$NODE_INSPECT_TRACE"
+            echo "NODE_INSPECT_TRACE_LIMIT=$NODE_INSPECT_TRACE_LIMIT"
+            echo "NODE_INSPECT_TRACE_REPORT=$NODE_INSPECT_TRACE_REPORT"
+            echo "NODE_INSPECT_TRACE_DUMP_ON_SIGNAL=$NODE_INSPECT_TRACE_DUMP_ON_SIGNAL"
+            echo "NODE_INSPECT_NATIVE_TRACE_DUMP_ON_SIGNAL=$NODE_INSPECT_NATIVE_TRACE_DUMP_ON_SIGNAL"
+            echo "NODE_INSPECT_TRACE_DUMP_ON_EXIT=$NODE_INSPECT_TRACE_DUMP_ON_EXIT"
+            echo "NODE_INSPECT_TRACE_DUMP_ON_WAIT=$NODE_INSPECT_TRACE_DUMP_ON_WAIT"
             date -u '+utc=%Y-%m-%dT%H:%M:%SZ'
             uname -a || true
             ulimit -a || true
             pwd
             df -h || true
-            find "$NODE_INSPECT_DEBUG_LOG_DIR" -maxdepth 1 -type f -print -exec wc -c {} \; 2>/dev/null || true
+            echo "--- inspect-debug files ---"
+            if [ -d "$NODE_INSPECT_DEBUG_LOG_DIR" ]; then
+              find "$NODE_INSPECT_DEBUG_LOG_DIR" -maxdepth 1 -type f -print | sort | while IFS= read -r file; do
+                echo "file=$file"
+                wc -c "$file" || true
+                head -n 1 "$file" || true
+              done
+            fi
           } > "$LOG_DIR/diagnostics.txt"
 
       - name: Upload workflow logs
@@ -287,12 +315,26 @@ jobs:
             echo "NODE_DEBUG_NATIVE=$NODE_DEBUG_NATIVE"
             echo "NODE_INSPECT_DEBUG_LOG_DIR=$NODE_INSPECT_DEBUG_LOG_DIR"
             echo "NODE_INSPECT_DETAILED_LOG=$NODE_INSPECT_DETAILED_LOG"
+            echo "NODE_INSPECT_TRACE=$NODE_INSPECT_TRACE"
+            echo "NODE_INSPECT_TRACE_LIMIT=$NODE_INSPECT_TRACE_LIMIT"
+            echo "NODE_INSPECT_TRACE_REPORT=$NODE_INSPECT_TRACE_REPORT"
+            echo "NODE_INSPECT_TRACE_DUMP_ON_SIGNAL=$NODE_INSPECT_TRACE_DUMP_ON_SIGNAL"
+            echo "NODE_INSPECT_NATIVE_TRACE_DUMP_ON_SIGNAL=$NODE_INSPECT_NATIVE_TRACE_DUMP_ON_SIGNAL"
+            echo "NODE_INSPECT_TRACE_DUMP_ON_EXIT=$NODE_INSPECT_TRACE_DUMP_ON_EXIT"
+            echo "NODE_INSPECT_TRACE_DUMP_ON_WAIT=$NODE_INSPECT_TRACE_DUMP_ON_WAIT"
             date -u '+utc=%Y-%m-%dT%H:%M:%SZ'
             uname -a || true
             ulimit -a || true
             pwd
             df -h || true
-            find "$NODE_INSPECT_DEBUG_LOG_DIR" -maxdepth 1 -type f -print -exec wc -c {} \; 2>/dev/null || true
+            echo "--- inspect-debug files ---"
+            if [ -d "$NODE_INSPECT_DEBUG_LOG_DIR" ]; then
+              find "$NODE_INSPECT_DEBUG_LOG_DIR" -maxdepth 1 -type f -print | sort | while IFS= read -r file; do
+                echo "file=$file"
+                wc -c "$file" || true
+                head -n 1 "$file" || true
+              done
+            fi
           } > "$LOG_DIR/diagnostics.txt"
 
       - name: Upload workflow logs

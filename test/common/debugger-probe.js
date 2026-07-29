@@ -51,6 +51,8 @@ function normalizeProbeReport(value) {
         result[key] = '<scriptId>';
       } else if (key === 'callFrames') {
         result[key] = '<callFrames>';
+      } else if (key === 'diagnostics') {
+        continue;
       } else {
         result[key] = normalizeProbeReport(value[key]);
       }

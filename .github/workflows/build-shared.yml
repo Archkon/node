@@ -32,10 +32,17 @@ permissions: {}
 env:
   FLAKY_TESTS: keep_retrying
   LOG_DIR: ${{ github.workspace }}/workflow-logs
-  NODE_DEBUG: inspect,inspect_probe
-  NODE_DEBUG_NATIVE: inspector,inspector_profiler
+  NODE_DEBUG: ''
+  NODE_DEBUG_NATIVE: ''
   NODE_INSPECT_DEBUG_LOG_DIR: ${{ github.workspace }}/workflow-logs/inspect-debug
-  NODE_INSPECT_DETAILED_LOG: '1'
+  NODE_INSPECT_DETAILED_LOG: '0'
+  NODE_INSPECT_TRACE: '1'
+  NODE_INSPECT_TRACE_LIMIT: '512'
+  NODE_INSPECT_TRACE_REPORT: '1'
+  NODE_INSPECT_TRACE_DUMP_ON_SIGNAL: '1'
+  NODE_INSPECT_NATIVE_TRACE_DUMP_ON_SIGNAL: '0'
+  NODE_INSPECT_TRACE_DUMP_ON_EXIT: '0'
+  NODE_INSPECT_TRACE_DUMP_ON_WAIT: '1'
 
 jobs:
   build:
@@ -86,6 +93,7 @@ jobs:
           nix-shell \
             -I "nixpkgs=$TAR_DIR/tools/nix/pkgs.nix" \
             --pure --keep TAR_DIR --keep FLAKY_TESTS --keep NODE_DEBUG --keep NODE_DEBUG_NATIVE --keep NODE_INSPECT_DEBUG_LOG_DIR --keep NODE_INSPECT_DETAILED_LOG \
+            --keep NODE_INSPECT_TRACE --keep NODE_INSPECT_TRACE_LIMIT --keep NODE_INSPECT_TRACE_REPORT --keep NODE_INSPECT_TRACE_DUMP_ON_SIGNAL --keep NODE_INSPECT_NATIVE_TRACE_DUMP_ON_SIGNAL --keep NODE_INSPECT_TRACE_DUMP_ON_EXIT --keep NODE_INSPECT_TRACE_DUMP_ON_WAIT \
             --keep SCCACHE_GHA_ENABLED --keep ACTIONS_CACHE_SERVICE_V2 --keep ACTIONS_RESULTS_URL --keep ACTIONS_RUNTIME_TOKEN \
             --arg loadJSBuiltinsDynamically false \
             --arg ccache "${NIX_SCCACHE:-null}" \
@@ -97,6 +105,13 @@ jobs:
                 echo "NODE_DEBUG_NATIVE=$NODE_DEBUG_NATIVE"
                 echo "NODE_INSPECT_DEBUG_LOG_DIR=$NODE_INSPECT_DEBUG_LOG_DIR"
                 echo "NODE_INSPECT_DETAILED_LOG=$NODE_INSPECT_DETAILED_LOG"
+                echo "NODE_INSPECT_TRACE=$NODE_INSPECT_TRACE"
+                echo "NODE_INSPECT_TRACE_LIMIT=$NODE_INSPECT_TRACE_LIMIT"
+                echo "NODE_INSPECT_TRACE_REPORT=$NODE_INSPECT_TRACE_REPORT"
+                echo "NODE_INSPECT_TRACE_DUMP_ON_SIGNAL=$NODE_INSPECT_TRACE_DUMP_ON_SIGNAL"
+                echo "NODE_INSPECT_NATIVE_TRACE_DUMP_ON_SIGNAL=$NODE_INSPECT_NATIVE_TRACE_DUMP_ON_SIGNAL"
+                echo "NODE_INSPECT_TRACE_DUMP_ON_EXIT=$NODE_INSPECT_TRACE_DUMP_ON_EXIT"
+                echo "NODE_INSPECT_TRACE_DUMP_ON_WAIT=$NODE_INSPECT_TRACE_DUMP_ON_WAIT"
                 echo "CI_SKIP_TESTS=$CI_SKIP_TESTS"
                 make -C "$TAR_DIR" run-ci -j4 V=1 TEST_CI_ARGS="-p actions --measure-flakiness 9 --skip-tests=$CI_SKIP_TESTS"
             ' "$TAR_DIR/shell.nix" 2>&1 |
@@ -119,12 +134,26 @@ jobs:
             echo "NODE_DEBUG_NATIVE=$NODE_DEBUG_NATIVE"
             echo "NODE_INSPECT_DEBUG_LOG_DIR=$NODE_INSPECT_DEBUG_LOG_DIR"
             echo "NODE_INSPECT_DETAILED_LOG=$NODE_INSPECT_DETAILED_LOG"
+            echo "NODE_INSPECT_TRACE=$NODE_INSPECT_TRACE"
+            echo "NODE_INSPECT_TRACE_LIMIT=$NODE_INSPECT_TRACE_LIMIT"
+            echo "NODE_INSPECT_TRACE_REPORT=$NODE_INSPECT_TRACE_REPORT"
+            echo "NODE_INSPECT_TRACE_DUMP_ON_SIGNAL=$NODE_INSPECT_TRACE_DUMP_ON_SIGNAL"
+            echo "NODE_INSPECT_NATIVE_TRACE_DUMP_ON_SIGNAL=$NODE_INSPECT_NATIVE_TRACE_DUMP_ON_SIGNAL"
+            echo "NODE_INSPECT_TRACE_DUMP_ON_EXIT=$NODE_INSPECT_TRACE_DUMP_ON_EXIT"
+            echo "NODE_INSPECT_TRACE_DUMP_ON_WAIT=$NODE_INSPECT_TRACE_DUMP_ON_WAIT"
             date -u '+utc=%Y-%m-%dT%H:%M:%SZ'
             uname -a || true
             ulimit -a || true
             pwd
             df -h || true
-            find "$NODE_INSPECT_DEBUG_LOG_DIR" -maxdepth 1 -type f -print -exec wc -c {} \; 2>/dev/null || true
+            echo "--- inspect-debug files ---"
+            if [ -d "$NODE_INSPECT_DEBUG_LOG_DIR" ]; then
+              find "$NODE_INSPECT_DEBUG_LOG_DIR" -maxdepth 1 -type f -print | sort | while IFS= read -r file; do
+                echo "file=$file"
+                wc -c "$file" || true
+                head -n 1 "$file" || true
+              done
+            fi
           } > "$LOG_DIR/diagnostics.txt"
           if [ -d "$HOME/Library/Logs/DiagnosticReports" ]; then
             mkdir -p "$LOG_DIR/DiagnosticReports"

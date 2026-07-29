@@ -3,6 +3,7 @@
 #include "base_object-inl.h"
 #include "crypto/crypto_util.h"
 #include "debug_utils-inl.h"
+#include "inspector/inspector_trace.h"
 #include "inspector/main_thread_interface.h"
 #include "inspector/node_json.h"
 #include "inspector/node_string.h"
@@ -87,6 +88,9 @@ class RequestToServer {
                     message_(std::move(message)) {}
 
   void Dispatch(InspectorSocketServer* server) const {
+    inspector_trace::Record("io.dispatch",
+                            session_id_,
+                            message_ == nullptr ? 0 : message_->string().length());
     per_process::Debug(DebugCategory::INSPECTOR_SERVER,
                        "[inspector io] dispatch action=%s session=%s bytes=%s\n",
                        TransportActionName(action_),
@@ -134,6 +138,12 @@ class RequestQueueData {
             std::unique_ptr<StringBuffer> message) {
     Mutex::ScopedLock scoped_lock(state_lock_);
     bool notify = messages_.empty();
+    if (message == nullptr) {
+      inspector_trace::RecordState("io.queue.post", session_id, messages_.size());
+    } else {
+      inspector_trace::RecordMessage(
+          "io.queue.post", session_id, message->string());
+    }
     per_process::Debug(DebugCategory::INSPECTOR_SERVER,
                        "[inspector io] queue action=%s session=%s bytes=%s notify=%s queuedBefore=%s\n",
                        TransportActionName(action),
@@ -175,11 +185,13 @@ class RequestQueueData {
 
   void DoDispatch() {
     if (server_ == nullptr) {
+      inspector_trace::Record("io.dispatch.no_server", -1);
       per_process::Debug(DebugCategory::INSPECTOR_SERVER,
                          "[inspector io] dispatch skipped no server\n");
       return;
     }
     MessageQueue messages = GetMessages();
+    inspector_trace::RecordState("io.dispatch.batch", -1, messages.size());
     per_process::Debug(DebugCategory::INSPECTOR_SERVER,
                        "[inspector io] dispatch batch size=%s\n",
                        messages.size());
@@ -229,6 +241,7 @@ class IoSessionDelegate : public InspectorSessionDelegate {
   explicit IoSessionDelegate(std::shared_ptr<RequestQueue> queue, int id)
                              : request_queue_(queue), id_(id) { }
   void SendMessageToFrontend(const v8_inspector::StringView& message) override {
+    inspector_trace::RecordMessage("io.delegate.frontend", id_, message);
     per_process::Debug(DebugCategory::INSPECTOR_SERVER,
                        "[inspector io] delegate send session=%s bytes=%s\n",
                        id_,
@@ -283,12 +296,14 @@ std::unique_ptr<InspectorIo> InspectorIo::Start(
   per_process::Debug(DebugCategory::INSPECTOR_SERVER,
                      "[inspector io] start requested path=%s\n",
                      path);
+  inspector_trace::Record("io.start.requested", -1, path.size());
   auto io = std::unique_ptr<InspectorIo>(
       new InspectorIo(main_thread,
                       path,
                       host_port,
                       inspect_publish_uid));
   if (io->request_queue_->Expired()) {  // Thread is not running
+    inspector_trace::Record("io.start.expired", -1);
     per_process::Debug(DebugCategory::INSPECTOR_SERVER,
                        "[inspector io] start failed: request queue expired\n");
     return nullptr;
@@ -296,6 +311,7 @@ std::unique_ptr<InspectorIo> InspectorIo::Start(
   per_process::Debug(DebugCategory::INSPECTOR_SERVER,
                      "[inspector io] start complete target=%s\n",
                      io->id_);
+  inspector_trace::Record("io.start.complete", -1);
   return io;
 }
 
@@ -313,12 +329,14 @@ InspectorIo::InspectorIo(std::shared_ptr<MainThreadHandle> main_thread,
                      "[inspector io] constructor target=%s script=%s\n",
                      id_,
                      script_name_);
+  inspector_trace::Record("io.constructor", -1, script_name_.size());
   Mutex::ScopedLock scoped_lock(thread_start_lock_);
   CHECK_EQ(uv_thread_create(&thread_, InspectorIo::ThreadMain, this), 0);
   thread_start_condition_.Wait(scoped_lock);
 }
 
 InspectorIo::~InspectorIo() {
+  inspector_trace::Record("io.destructor", -1);
   per_process::Debug(DebugCategory::INSPECTOR_SERVER,
                      "[inspector io] destructor target=%s\n",
                      id_);
@@ -331,6 +349,7 @@ InspectorIo::~InspectorIo() {
 }
 
 void InspectorIo::StopAcceptingNewConnections() {
+  inspector_trace::Record("io.stop_accepting", -1);
   per_process::Debug(DebugCategory::INSPECTOR_SERVER,
                      "[inspector io] stop accepting target=%s\n",
                      id_);
@@ -343,6 +362,7 @@ void InspectorIo::ThreadMain(void* io) {
 }
 
 void InspectorIo::ThreadMain() {
+  inspector_trace::Record("io.thread.begin", -1);
   per_process::Debug(DebugCategory::INSPECTOR_SERVER,
                      "[inspector io] thread main begin target=%s\n",
                      id_);
@@ -386,16 +406,19 @@ void InspectorIo::ThreadMain() {
                          id_,
                          host_port->host(),
                          server.Port());
+      inspector_trace::RecordState("io.server.started", -1, server.Port());
     } else {
       per_process::Debug(DebugCategory::INSPECTOR_SERVER,
                          "[inspector io] server failed to start target=%s host=%s port=%s\n",
                          id_,
                          host,
                          port);
+      inspector_trace::RecordState("io.server.failed", -1, port);
     }
     thread_start_condition_.Broadcast(scoped_lock);
   }
   uv_run(&loop, UV_RUN_DEFAULT);
+  inspector_trace::Record("io.uv_run.done", -1);
   per_process::Debug(DebugCategory::INSPECTOR_SERVER,
                      "[inspector io] uv_run returned target=%s\n",
                      id_);
@@ -403,6 +426,7 @@ void InspectorIo::ThreadMain() {
   per_process::Debug(DebugCategory::INSPECTOR_SERVER,
                      "[inspector io] thread main end target=%s\n",
                      id_);
+  inspector_trace::Record("io.thread.end", -1);
 }
 
 std::string InspectorIo::GetWsUrl() const {
@@ -422,6 +446,7 @@ InspectorIoDelegate::InspectorIoDelegate(
 
 void InspectorIoDelegate::StartSession(int session_id,
                                        const std::string& target_id) {
+  inspector_trace::Record("io.session.start", session_id, target_id.size());
   per_process::Debug(DebugCategory::INSPECTOR_SERVER,
                      "[inspector io] start session=%s target=%s\n",
                      session_id,
@@ -451,6 +476,7 @@ std::optional<std::string> InspectorIoDelegate::GetTargetSessionId(
 
 void InspectorIoDelegate::MessageReceived(int session_id,
                                           const std::string& message) {
+  inspector_trace::RecordMessage("io.message.received", session_id, message);
   per_process::Debug(DebugCategory::INSPECTOR_SERVER,
                      "[inspector io] message received session=%s bytes=%s %s\n",
                      session_id,
@@ -474,6 +500,10 @@ void InspectorIoDelegate::MessageReceived(int session_id,
   }
 
   auto session = sessions_.find(merged_session_id);
+  inspector_trace::RecordState(
+      session == sessions_.end() ? "io.route.new" : "io.route.existing",
+      session_id,
+      merged_session_id);
   per_process::Debug(DebugCategory::INSPECTOR_SERVER,
                      "[inspector io] route message session=%s mergedSession=%s hasWorker=%s existing=%s targetSession=%s\n",
                      session_id,
@@ -498,14 +528,18 @@ void InspectorIoDelegate::MessageReceived(int session_id,
 
     if (session) {
       sessions_[merged_session_id] = std::move(session);
+      inspector_trace::RecordState(
+          "io.backend.connected", session_id, sessions_.size());
       per_process::Debug(DebugCategory::INSPECTOR_SERVER,
                          "[inspector io] connected backend session=%s mergedSession=%s sessions=%s\n",
                          session_id,
                          merged_session_id,
                          sessions_.size());
+      inspector_trace::RecordMessage("io.backend.dispatch", session_id, message);
       sessions_[merged_session_id]->Dispatch(
           Utf8ToStringView(message)->string());
     } else {
+      inspector_trace::Record("io.backend.connect_failed", session_id);
       fprintf(stderr, "Failed to connect to inspector session.\n");
     }
   } else {
@@ -513,11 +547,13 @@ void InspectorIoDelegate::MessageReceived(int session_id,
                        "[inspector io] dispatch existing backend session=%s mergedSession=%s\n",
                        session_id,
                        merged_session_id);
+    inspector_trace::RecordMessage("io.backend.dispatch", session_id, message);
     session->second->Dispatch(Utf8ToStringView(message)->string());
   }
 }
 
 void InspectorIoDelegate::EndSession(int session_id) {
+  inspector_trace::RecordState("io.session.end", session_id, sessions_.size());
   per_process::Debug(DebugCategory::INSPECTOR_SERVER,
                      "[inspector io] end session=%s before=%s\n",
                      session_id,

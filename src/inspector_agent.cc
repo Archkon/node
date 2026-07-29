@@ -5,6 +5,7 @@
 #include "crdtp/json.h"
 #include "env-inl.h"
 #include "inspector/dom_storage_agent.h"
+#include "inspector/inspector_trace.h"
 #include "inspector/io_agent.h"
 #include "inspector/main_thread_interface.h"
 #include "inspector/network_inspector.h"
@@ -321,6 +322,9 @@ class ChannelImpl final : public v8_inspector::V8Inspector::Channel,
 
   void dispatchProtocolMessage(const StringView& message) {
     std::string raw_message = protocol::StringUtil::StringViewToUtf8(message);
+    inspector_trace::RecordMessage("channel.dispatch.received",
+                                   -1,
+                                   raw_message);
     per_process::Debug(DebugCategory::INSPECTOR_SERVER,
                        "[inspector received] %s\n",
                        raw_message);
@@ -340,6 +344,7 @@ class ChannelImpl final : public v8_inspector::V8Inspector::Channel,
                        raw_message.size());
     if (v8_inspector::V8InspectorSession::canDispatchMethod(
             StringView(method.data(), method.size()))) {
+      inspector_trace::RecordMessage("channel.dispatch.v8", -1, raw_message);
       per_process::Debug(DebugCategory::INSPECTOR_SERVER,
                          "[inspector dispatch] method=%s target=v8\n",
                          method_name);
@@ -349,9 +354,12 @@ class ChannelImpl final : public v8_inspector::V8Inspector::Channel,
     per_process::Debug(DebugCategory::INSPECTOR_SERVER,
                        "[inspector dispatch] method=%s target=node\n",
                        method_name);
+    inspector_trace::RecordMessage("channel.dispatch.node", -1, raw_message);
     UberDispatcher::DispatchResult result =
         node_dispatcher_->Dispatch(dispatchable);
     if (!result.MethodFound()) {
+      inspector_trace::RecordMessage(
+          "channel.dispatch.not_found", -1, raw_message);
       per_process::Debug(DebugCategory::INSPECTOR_SERVER,
                          "[inspector] method not found\n");
       // Fall through to send a method not found error.
@@ -360,6 +368,7 @@ class ChannelImpl final : public v8_inspector::V8Inspector::Channel,
   }
 
   void schedulePauseOnNextStatement(const std::string& reason) {
+    inspector_trace::Record("channel.schedule_pause", -1, reason.size());
     std::unique_ptr<StringBuffer> buffer = Utf8ToStringView(reason);
     session_->schedulePauseOnNextStatement(buffer->string(), buffer->string());
   }
@@ -374,12 +383,14 @@ class ChannelImpl final : public v8_inspector::V8Inspector::Channel,
   }
 
   void setWaitingForDebugger() {
+    inspector_trace::Record("channel.waiting.set", -1);
     per_process::Debug(DebugCategory::INSPECTOR_SERVER,
                        "[inspector channel] setWaitingForDebugger\n");
     runtime_agent_->setWaitingForDebugger();
   }
 
   void unsetWaitingForDebugger() {
+    inspector_trace::Record("channel.waiting.unset", -1);
     per_process::Debug(DebugCategory::INSPECTOR_SERVER,
                        "[inspector channel] unsetWaitingForDebugger\n");
     runtime_agent_->unsetWaitingForDebugger();
@@ -394,6 +405,7 @@ class ChannelImpl final : public v8_inspector::V8Inspector::Channel,
   void sendResponse(
       int callId,
       std::unique_ptr<v8_inspector::StringBuffer> message) override {
+    inspector_trace::RecordState("channel.send.response", -1, callId);
     per_process::Debug(DebugCategory::INSPECTOR_SERVER,
                        "[inspector channel] sendResponse callId=%s\n",
                        callId);
@@ -403,6 +415,8 @@ class ChannelImpl final : public v8_inspector::V8Inspector::Channel,
   // v8_inspector::V8Inspector::Channel
   void sendNotification(
       std::unique_ptr<v8_inspector::StringBuffer> message) override {
+    inspector_trace::RecordMessage(
+        "channel.send.notification", -1, message->string());
     per_process::Debug(DebugCategory::INSPECTOR_SERVER,
                        "[inspector channel] sendNotification\n");
     sendMessageToFrontend(message->string());
@@ -423,6 +437,7 @@ class ChannelImpl final : public v8_inspector::V8Inspector::Channel,
   }
 
   void sendMessageToFrontend(const StringView& message) {
+    inspector_trace::RecordMessage("channel.frontend", -1, message);
     if (per_process::enabled_debug_list.enabled(
             DebugCategory::INSPECTOR_SERVER)) {
       std::string raw_message = protocol::StringUtil::StringViewToUtf8(message);
@@ -438,6 +453,7 @@ class ChannelImpl final : public v8_inspector::V8Inspector::Channel,
       std::string target_session_id_str = std::to_string(*target_session_id);
       value->setString("sessionId", target_session_id_str);
       std::string json = serializeToJSON(std::move(value));
+      inspector_trace::RecordMessage("channel.frontend.target", -1, json);
       delegate_->SendMessageToFrontend(Utf8ToStringView(json)->string());
     } else {
       delegate_->SendMessageToFrontend(message);
@@ -1129,6 +1145,8 @@ void Agent::WaitForDisconnect() {
   if (client_->hasConnectedSessions() && !is_worker) {
     fprintf(stderr, "Waiting for the debugger to disconnect...\n");
     fflush(stderr);
+    inspector_trace::Record("agent.wait_disconnect", -1);
+    inspector_trace::DumpOnWait("wait-for-disconnect");
   }
   if (!client_->notifyWaitingForDisconnect()) {
     client_->contextDestroyed(parent_env_->context());

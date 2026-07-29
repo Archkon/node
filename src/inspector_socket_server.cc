@@ -1,6 +1,7 @@
 #include "inspector_socket_server.h"
 
 #include "debug_utils-inl.h"
+#include "inspector/inspector_trace.h"
 #include "node.h"
 #include "util-inl.h"
 #include "uv.h"
@@ -10,6 +11,7 @@
 #include <map>
 #include <set>
 #include <sstream>
+#include <string_view>
 
 namespace node {
 namespace inspector {
@@ -279,6 +281,7 @@ SocketSession* InspectorSocketServer::Session(int session_id) {
 void InspectorSocketServer::SessionStarted(int session_id,
                                            const std::string& id,
                                            const std::string& ws_key) {
+  inspector_trace::Record("socket.session.start", session_id, id.size());
   per_process::Debug(DebugCategory::INSPECTOR_SERVER,
                      "[inspector socket] session start session=%s target=%s key=%s\n",
                      session_id,
@@ -286,6 +289,7 @@ void InspectorSocketServer::SessionStarted(int session_id,
                      ws_key);
   SocketSession* session = Session(session_id);
   if (!TargetExists(id)) {
+    inspector_trace::Record("socket.session.decline", session_id, id.size());
     per_process::Debug(DebugCategory::INSPECTOR_SERVER,
                        "[inspector socket] session start declined missing target session=%s target=%s\n",
                        session_id,
@@ -295,17 +299,21 @@ void InspectorSocketServer::SessionStarted(int session_id,
   }
   connected_sessions_[session_id].first = id;
   session->Accept(ws_key);
+  inspector_trace::Record("socket.session.accept", session_id);
   delegate_->StartSession(session_id, id);
 }
 
 void InspectorSocketServer::SessionTerminated(int session_id) {
   if (Session(session_id) == nullptr) {
+    inspector_trace::Record("socket.session.terminated_missing", session_id);
     per_process::Debug(DebugCategory::INSPECTOR_SERVER,
                        "[inspector socket] session terminated missing session=%s\n",
                        session_id);
     return;
   }
   bool was_attached = connected_sessions_[session_id].first != "";
+  inspector_trace::RecordState(
+      "socket.session.terminated", session_id, connected_sessions_.size());
   per_process::Debug(DebugCategory::INSPECTOR_SERVER,
                      "[inspector socket] session terminated session=%s attached=%s connectedBefore=%s state=%s\n",
                      session_id,
@@ -404,6 +412,7 @@ std::string InspectorSocketServer::GetFrontendURL(bool is_compat,
 }
 
 bool InspectorSocketServer::Start() {
+  inspector_trace::RecordState("socket.start", -1, port_);
   per_process::Debug(DebugCategory::INSPECTOR_SERVER,
                      "[inspector socket] start host=%s port=%s\n",
                      host_,
@@ -422,6 +431,7 @@ bool InspectorSocketServer::Start() {
   int err = uv_getaddrinfo(loop_, &req, nullptr, host_.c_str(),
                            port_string.c_str(), &hints);
   if (err < 0) {
+    inspector_trace::RecordState("socket.start.resolve_failed", -1, err);
     per_process::Debug(DebugCategory::INSPECTOR_SERVER,
                        "[inspector socket] start resolve failed host=%s port=%s err=%s\n",
                        host_,
@@ -445,6 +455,7 @@ bool InspectorSocketServer::Start() {
   // We only show error if we failed to start server on all addresses. We only
   // show one error, for the last address.
   if (server_sockets_.empty()) {
+    inspector_trace::RecordState("socket.start.listen_failed", -1, err);
     per_process::Debug(DebugCategory::INSPECTOR_SERVER,
                        "[inspector socket] start listen failed host=%s port=%s err=%s\n",
                        host_,
@@ -470,11 +481,13 @@ bool InspectorSocketServer::Start() {
                      host_,
                      Port(),
                      server_sockets_.size());
+  inspector_trace::RecordState("socket.start.complete", -1, Port());
   return true;
 }
 
 void InspectorSocketServer::Stop() {
   if (state_ == ServerState::kStopped) {
+    inspector_trace::Record("socket.stop.ignored", -1);
     per_process::Debug(DebugCategory::INSPECTOR_SERVER,
                        "[inspector socket] stop ignored already stopped\n");
     return;
@@ -483,6 +496,7 @@ void InspectorSocketServer::Stop() {
                      "[inspector socket] stop connected=%s sockets=%s\n",
                      connected_sessions_.size(),
                      server_sockets_.size());
+  inspector_trace::RecordState("socket.stop", -1, connected_sessions_.size());
   CHECK_EQ(state_, ServerState::kRunning);
   state_ = ServerState::kStopped;
   server_sockets_.clear();
@@ -491,6 +505,8 @@ void InspectorSocketServer::Stop() {
 }
 
 void InspectorSocketServer::TerminateConnections() {
+  inspector_trace::RecordState(
+      "socket.terminate", -1, connected_sessions_.size());
   per_process::Debug(DebugCategory::INSPECTOR_SERVER,
                      "[inspector socket] terminate connections count=%s\n",
                      connected_sessions_.size());
@@ -516,6 +532,9 @@ void InspectorSocketServer::Accept(int server_port,
   std::unique_ptr<SocketSession> session(
       new SocketSession(this, next_session_id_++, server_port));
   int session_id = session->id();
+  inspector_trace::RecordState("socket.accept.candidate",
+                               session_id,
+                               server_port);
   per_process::Debug(DebugCategory::INSPECTOR_SERVER,
                      "[inspector socket] accept candidate session=%s serverPort=%s\n",
                      session_id,
@@ -530,11 +549,14 @@ void InspectorSocketServer::Accept(int server_port,
   if (inspector) {
     session->Own(std::move(inspector));
     connected_sessions_[session_id].second = std::move(session);
+    inspector_trace::RecordState(
+        "socket.accept.complete", session_id, connected_sessions_.size());
     per_process::Debug(DebugCategory::INSPECTOR_SERVER,
                        "[inspector socket] accept complete session=%s connected=%s\n",
                        session_id,
                        connected_sessions_.size());
   } else {
+    inspector_trace::Record("socket.accept.failed", session_id);
     per_process::Debug(DebugCategory::INSPECTOR_SERVER,
                        "[inspector socket] accept failed session=%s\n",
                        session_id);
@@ -544,12 +566,14 @@ void InspectorSocketServer::Accept(int server_port,
 void InspectorSocketServer::Send(int session_id, const std::string& message) {
   SocketSession* session = Session(session_id);
   if (session != nullptr) {
+    inspector_trace::RecordMessage("socket.send", session_id, message);
     per_process::Debug(DebugCategory::INSPECTOR_SERVER,
                        "[inspector socket] send session=%s bytes=%s\n",
                        session_id,
                        message.size());
     session->Send(message);
   } else {
+    inspector_trace::RecordMessage("socket.send.missing", session_id, message);
     per_process::Debug(DebugCategory::INSPECTOR_SERVER,
                        "[inspector socket] send dropped missing session=%s bytes=%s\n",
                        session_id,
@@ -567,6 +591,7 @@ SocketSession::SocketSession(InspectorSocketServer* server, int id,
     : id_(id), server_port_(server_port) {}
 
 void SocketSession::Send(const std::string& message) {
+  inspector_trace::RecordMessage("socket.write", id_, message);
   per_process::Debug(DebugCategory::INSPECTOR_SERVER,
                      "[inspector socket] write session=%s bytes=%s %s\n",
                      id_,
@@ -577,6 +602,7 @@ void SocketSession::Send(const std::string& message) {
 
 void SocketSession::Delegate::OnHttpGet(const std::string& host,
                                         const std::string& path) {
+  inspector_trace::Record("socket.http.get", session_id_, path.size());
   per_process::Debug(DebugCategory::INSPECTOR_SERVER,
                      "[inspector socket] http get session=%s host=%s path=%s\n",
                      session_id_,
@@ -589,6 +615,7 @@ void SocketSession::Delegate::OnHttpGet(const std::string& host,
 void SocketSession::Delegate::OnSocketUpgrade(const std::string& host,
                                               const std::string& path,
                                               const std::string& ws_key) {
+  inspector_trace::Record("socket.upgrade", session_id_, path.size());
   per_process::Debug(DebugCategory::INSPECTOR_SERVER,
                      "[inspector socket] upgrade session=%s host=%s path=%s key=%s\n",
                      session_id_,
@@ -600,6 +627,11 @@ void SocketSession::Delegate::OnSocketUpgrade(const std::string& host,
 }
 
 void SocketSession::Delegate::OnWsFrame(const std::vector<char>& data) {
+  std::string_view message =
+      data.empty() ? std::string_view() :
+                     std::string_view(data.data(), data.size());
+  inspector_trace::RecordMessage(
+      "socket.frame", session_id_, message);
   per_process::Debug(DebugCategory::INSPECTOR_SERVER,
                      "[inspector socket] frame session=%s bytes=%s\n",
                      session_id_,

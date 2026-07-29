@@ -32,6 +32,16 @@ function startCLI(args, flags = [], spawnOpts = {}, opts = { randomPort: true })
   const rawOutputChunks = [];
   let failureLogWritten = false;
 
+  function requestTraceDump() {
+    if (process.env.NODE_INSPECT_TRACE_DUMP_ON_SIGNAL !== '1') {
+      return 'disabled';
+    }
+    if (child.exitCode !== null || child.signalCode !== null) {
+      return 'not-running';
+    }
+    return child.kill('SIGTERM') ? 'SIGTERM' : 'failed';
+  }
+
   function writeFailureLog(reason) {
     if (failureLogWritten) return;
     failureLogWritten = true;
@@ -43,8 +53,12 @@ function startCLI(args, flags = [], spawnOpts = {}, opts = { randomPort: true })
       ...args,
     ].join(' ');
 
-    const rawChunks = rawOutputChunks.map(({ stream, chunk }) => {
-      return `--- ${stream} chunk (${Buffer.byteLength(chunk)} bytes) ---\n${chunk}`;
+    const traceDumpSignal = requestTraceDump();
+    const nativeTraceDumpOnSignal =
+      process.env.NODE_INSPECT_NATIVE_TRACE_DUMP_ON_SIGNAL || '';
+    const rawChunks = rawOutputChunks.map(({ stream, time, chunk }) => {
+      return `--- ${stream} chunk ${new Date(time).toISOString()} ` +
+        `(${Buffer.byteLength(chunk)} bytes) ---\n${chunk}`;
     }).join('\n');
 
     writeInspectDebugLog('debugger-cli-failure', [
@@ -55,6 +69,12 @@ function startCLI(args, flags = [], spawnOpts = {}, opts = { randomPort: true })
       `NODE_DEBUG=${process.env.NODE_DEBUG || ''}`,
       `NODE_DEBUG_NATIVE=${process.env.NODE_DEBUG_NATIVE || ''}`,
       `NODE_INSPECT_DETAILED_LOG=${process.env.NODE_INSPECT_DETAILED_LOG || ''}`,
+      `NODE_INSPECT_TRACE=${process.env.NODE_INSPECT_TRACE || ''}`,
+      `NODE_INSPECT_TRACE_DUMP_ON_SIGNAL=${process.env.NODE_INSPECT_TRACE_DUMP_ON_SIGNAL || ''}`,
+      `NODE_INSPECT_NATIVE_TRACE_DUMP_ON_SIGNAL=${nativeTraceDumpOnSignal}`,
+      `NODE_INSPECT_TRACE_DUMP_ON_EXIT=${process.env.NODE_INSPECT_TRACE_DUMP_ON_EXIT || ''}`,
+      `NODE_INSPECT_TRACE_DUMP_ON_WAIT=${process.env.NODE_INSPECT_TRACE_DUMP_ON_WAIT || ''}`,
+      `traceDumpSignal=${traceDumpSignal}`,
       '',
       '--- normalized output ---',
       getOutput(),
@@ -74,6 +94,7 @@ function startCLI(args, flags = [], spawnOpts = {}, opts = { randomPort: true })
     }
     rawOutputChunks.push({
       stream: this === child.stderr ? 'stderr' : 'stdout',
+      time: Date.now(),
       chunk,
     });
     outputBuffer.push(chunk);

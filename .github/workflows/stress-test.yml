@@ -34,6 +34,11 @@ on:
       inspect_debug:
         description: Enable detailed inspector/debugger logs. Disable for timing-sensitive A/B runs.
         required: true
+        default: false
+        type: boolean
+      inspect_trace:
+        description: Enable low-overhead inspector trace buffers written to inspect-debug artifacts.
+        required: true
         default: true
         type: boolean
 
@@ -47,6 +52,14 @@ env:
   NODE_DEBUG_NATIVE: ${{ inputs.inspect_debug && 'inspector,inspector_profiler' || '' }}
   NODE_INSPECT_DEBUG_LOG_DIR: ${{ github.workspace }}/workflow-logs/inspect-debug
   NODE_INSPECT_DETAILED_LOG: ${{ inputs.inspect_debug && '1' || '0' }}
+  INSPECT_TRACE: ${{ inputs.inspect_trace }}
+  NODE_INSPECT_TRACE: ${{ inputs.inspect_trace && '1' || '0' }}
+  NODE_INSPECT_TRACE_LIMIT: '512'
+  NODE_INSPECT_TRACE_REPORT: ${{ inputs.inspect_trace && '1' || '0' }}
+  NODE_INSPECT_TRACE_DUMP_ON_SIGNAL: ${{ inputs.inspect_trace && '1' || '0' }}
+  NODE_INSPECT_NATIVE_TRACE_DUMP_ON_SIGNAL: '0'
+  NODE_INSPECT_TRACE_DUMP_ON_EXIT: '0'
+  NODE_INSPECT_TRACE_DUMP_ON_WAIT: ${{ inputs.inspect_trace && '1' || '0' }}
 
 permissions:
   contents: read
@@ -115,6 +128,14 @@ jobs:
             echo "NODE_DEBUG_NATIVE=$NODE_DEBUG_NATIVE"
             echo "NODE_INSPECT_DEBUG_LOG_DIR=$NODE_INSPECT_DEBUG_LOG_DIR"
             echo "NODE_INSPECT_DETAILED_LOG=$NODE_INSPECT_DETAILED_LOG"
+            echo "INSPECT_TRACE=$INSPECT_TRACE"
+            echo "NODE_INSPECT_TRACE=$NODE_INSPECT_TRACE"
+            echo "NODE_INSPECT_TRACE_LIMIT=$NODE_INSPECT_TRACE_LIMIT"
+            echo "NODE_INSPECT_TRACE_REPORT=$NODE_INSPECT_TRACE_REPORT"
+            echo "NODE_INSPECT_TRACE_DUMP_ON_SIGNAL=$NODE_INSPECT_TRACE_DUMP_ON_SIGNAL"
+            echo "NODE_INSPECT_NATIVE_TRACE_DUMP_ON_SIGNAL=$NODE_INSPECT_NATIVE_TRACE_DUMP_ON_SIGNAL"
+            echo "NODE_INSPECT_TRACE_DUMP_ON_EXIT=$NODE_INSPECT_TRACE_DUMP_ON_EXIT"
+            echo "NODE_INSPECT_TRACE_DUMP_ON_WAIT=$NODE_INSPECT_TRACE_DUMP_ON_WAIT"
             make -C node build-ci -j"$(getconf _NPROCESSORS_ONLN)" V=1 CONFIG_FLAGS="--error-on-warn --v8-enable-temporal-support"
           } 2>&1 |
             tee "$LOG_DIR/build.log"
@@ -140,6 +161,14 @@ jobs:
             echo "NODE_DEBUG_NATIVE=$NODE_DEBUG_NATIVE"
             echo "NODE_INSPECT_DEBUG_LOG_DIR=$NODE_INSPECT_DEBUG_LOG_DIR"
             echo "NODE_INSPECT_DETAILED_LOG=$NODE_INSPECT_DETAILED_LOG"
+            echo "INSPECT_TRACE=$INSPECT_TRACE"
+            echo "NODE_INSPECT_TRACE=$NODE_INSPECT_TRACE"
+            echo "NODE_INSPECT_TRACE_LIMIT=$NODE_INSPECT_TRACE_LIMIT"
+            echo "NODE_INSPECT_TRACE_REPORT=$NODE_INSPECT_TRACE_REPORT"
+            echo "NODE_INSPECT_TRACE_DUMP_ON_SIGNAL=$NODE_INSPECT_TRACE_DUMP_ON_SIGNAL"
+            echo "NODE_INSPECT_NATIVE_TRACE_DUMP_ON_SIGNAL=$NODE_INSPECT_NATIVE_TRACE_DUMP_ON_SIGNAL"
+            echo "NODE_INSPECT_TRACE_DUMP_ON_EXIT=$NODE_INSPECT_TRACE_DUMP_ON_EXIT"
+            echo "NODE_INSPECT_TRACE_DUMP_ON_WAIT=$NODE_INSPECT_TRACE_DUMP_ON_WAIT"
             python3 tools/test.py \
               --repeat "$REPEAT" \
               -j "$JOBS" \
@@ -166,12 +195,27 @@ jobs:
             echo "NODE_DEBUG_NATIVE=$NODE_DEBUG_NATIVE"
             echo "NODE_INSPECT_DEBUG_LOG_DIR=$NODE_INSPECT_DEBUG_LOG_DIR"
             echo "NODE_INSPECT_DETAILED_LOG=$NODE_INSPECT_DETAILED_LOG"
+            echo "INSPECT_TRACE=$INSPECT_TRACE"
+            echo "NODE_INSPECT_TRACE=$NODE_INSPECT_TRACE"
+            echo "NODE_INSPECT_TRACE_LIMIT=$NODE_INSPECT_TRACE_LIMIT"
+            echo "NODE_INSPECT_TRACE_REPORT=$NODE_INSPECT_TRACE_REPORT"
+            echo "NODE_INSPECT_TRACE_DUMP_ON_SIGNAL=$NODE_INSPECT_TRACE_DUMP_ON_SIGNAL"
+            echo "NODE_INSPECT_NATIVE_TRACE_DUMP_ON_SIGNAL=$NODE_INSPECT_NATIVE_TRACE_DUMP_ON_SIGNAL"
+            echo "NODE_INSPECT_TRACE_DUMP_ON_EXIT=$NODE_INSPECT_TRACE_DUMP_ON_EXIT"
+            echo "NODE_INSPECT_TRACE_DUMP_ON_WAIT=$NODE_INSPECT_TRACE_DUMP_ON_WAIT"
             date -u '+utc=%Y-%m-%dT%H:%M:%SZ'
             uname -a || true
             ulimit -a || true
             pwd
             df -h || true
-            find "$NODE_INSPECT_DEBUG_LOG_DIR" -maxdepth 1 -type f -print -exec wc -c {} \; 2>/dev/null || true
+            echo "--- inspect-debug files ---"
+            if [ -d "$NODE_INSPECT_DEBUG_LOG_DIR" ]; then
+              find "$NODE_INSPECT_DEBUG_LOG_DIR" -maxdepth 1 -type f -print | sort | while IFS= read -r file; do
+                echo "file=$file"
+                wc -c "$file" || true
+                head -n 1 "$file" || true
+              done
+            fi
           } > "$LOG_DIR/diagnostics.txt"
           if [ -d "$HOME/Library/Logs/DiagnosticReports" ]; then
             mkdir -p "$LOG_DIR/DiagnosticReports"

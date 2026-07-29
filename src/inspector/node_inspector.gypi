@@ -44,6 +44,8 @@
       'src/inspector/dom_storage_agent.h',
       'src/inspector/inspector_object_utils.cc',
       'src/inspector/inspector_object_utils.h',
+      'src/inspector/inspector_trace.cc',
+      'src/inspector/inspector_trace.h',
       'src/inspector/storage_agent.h',
       'src/inspector/storage_agent.cc',
       'src/inspector/notification_emitter.h',

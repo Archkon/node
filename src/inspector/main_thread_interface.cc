@@ -1,6 +1,7 @@
 #include "main_thread_interface.h"
 
 #include "env-inl.h"
+#include "inspector/inspector_trace.h"
 #include "simdutf.h"
 #include "v8-inspector.h"
 
@@ -140,12 +141,14 @@ class MainThreadSessionState {
   }
 
   void Connect(std::unique_ptr<InspectorSessionDelegate> delegate) {
+    inspector_trace::Record("main.state.connect", -1);
     Agent* agent = thread_->inspector_agent();
     if (agent != nullptr)
       session_ = agent->Connect(std::move(delegate), prevent_shutdown_);
   }
 
   void Dispatch(std::unique_ptr<StringBuffer> message) {
+    inspector_trace::RecordMessage("main.state.dispatch", -1, message->string());
     session_->Dispatch(message->string());
   }
 
@@ -169,6 +172,7 @@ class CrossThreadInspectorSession : public InspectorSession {
   }
 
   void Dispatch(const StringView& message) override {
+    inspector_trace::RecordMessage("main.cross.dispatch", id_, message);
     state_.Call(&MainThreadSessionState::Dispatch,
                 StringBuffer::create(message));
   }
@@ -183,6 +187,7 @@ class ThreadSafeDelegate : public InspectorSessionDelegate {
                      : thread_(thread), delegate_(thread, object_id) {}
 
   void SendMessageToFrontend(const v8_inspector::StringView& message) override {
+    inspector_trace::RecordMessage("main.threadsafe.frontend", -1, message);
     delegate_.Call(
         [m = StringBuffer::create(message)]
         (InspectorSessionDelegate* delegate) {
@@ -208,6 +213,7 @@ void MainThreadInterface::Post(std::unique_ptr<Request> request) {
   CHECK_NOT_NULL(agent_);
   Mutex::ScopedLock scoped_lock(requests_lock_);
   bool needs_notify = requests_.empty();
+  inspector_trace::RecordState("main.post", -1, requests_.size());
   requests_.push_back(std::move(request));
   if (needs_notify) {
     std::weak_ptr<MainThreadInterface> weak_self {shared_from_this()};
@@ -219,6 +225,8 @@ void MainThreadInterface::Post(std::unique_ptr<Request> request) {
 }
 
 bool MainThreadInterface::WaitForFrontendEvent() {
+  inspector_trace::RecordState(
+      "main.wait_frontend.begin", -1, dispatching_message_queue_.size());
   // We allow DispatchMessages reentry as we enter the pause. This is important
   // to support debugging the code invoked by an inspector call, such
   // as Runtime.evaluate
@@ -230,18 +238,25 @@ bool MainThreadInterface::WaitForFrontendEvent() {
     }
     stop_waiting_for_frontend_event_requested_ = false;
   }
+  inspector_trace::RecordState(
+      "main.wait_frontend.end", -1, dispatching_message_queue_.size());
   return true;
 }
 
 void MainThreadInterface::StopWaitingForFrontendEvent() {
   Mutex::ScopedLock scoped_lock(requests_lock_);
+  inspector_trace::RecordState("main.wait_frontend.stop", -1, requests_.size());
   stop_waiting_for_frontend_event_requested_ = true;
   incoming_message_cond_.Broadcast(scoped_lock);
 }
 
 void MainThreadInterface::DispatchMessages() {
-  if (dispatching_messages_)
+  if (dispatching_messages_) {
+    inspector_trace::Record("main.dispatch.reentry", -1);
     return;
+  }
+  inspector_trace::RecordState(
+      "main.dispatch.begin", -1, dispatching_message_queue_.size());
   dispatching_messages_ = true;
   bool had_messages = false;
   do {
@@ -251,6 +266,8 @@ void MainThreadInterface::DispatchMessages() {
     }
     had_messages = !dispatching_message_queue_.empty();
     while (!dispatching_message_queue_.empty()) {
+      inspector_trace::RecordState(
+          "main.dispatch.task", -1, dispatching_message_queue_.size());
       MessageQueue::value_type task;
       std::swap(dispatching_message_queue_.front(), task);
       dispatching_message_queue_.pop_front();
@@ -260,6 +277,7 @@ void MainThreadInterface::DispatchMessages() {
     }
   } while (had_messages);
   dispatching_messages_ = false;
+  inspector_trace::Record("main.dispatch.end", -1);
 }
 
 std::shared_ptr<MainThreadHandle> MainThreadInterface::GetHandle() {
@@ -307,6 +325,8 @@ std::unique_ptr<StringBuffer> Utf8ToStringView(const std::string_view message) {
 std::unique_ptr<InspectorSession> MainThreadHandle::Connect(
     std::unique_ptr<InspectorSessionDelegate> delegate,
     bool prevent_shutdown) {
+  inspector_trace::RecordState(
+      "main.handle.connect", -1, prevent_shutdown ? 1 : 0);
   return std::unique_ptr<InspectorSession>(
       new CrossThreadInspectorSession(++next_session_id_,
                                       shared_from_this(),
@@ -316,8 +336,11 @@ std::unique_ptr<InspectorSession> MainThreadHandle::Connect(
 
 bool MainThreadHandle::Post(std::unique_ptr<Request> request) {
   Mutex::ScopedLock scoped_lock(block_lock_);
-  if (!main_thread_)
+  if (!main_thread_) {
+    inspector_trace::Record("main.handle.post.expired", -1);
     return false;
+  }
+  inspector_trace::Record("main.handle.post", -1);
   main_thread_->Post(std::move(request));
   return true;
 }

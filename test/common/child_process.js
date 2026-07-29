@@ -110,6 +110,8 @@ function expectSyncExit(caller, spawnArgs, {
     if (Array.isArray(spawnArgs[1])) {
       command += ' ' + spawnArgs[1].join(' ');
     }
+    const nativeTraceDumpOnSignal =
+      process.env.NODE_INSPECT_NATIVE_TRACE_DUMP_ON_SIGNAL || '';
     writeInspectDebugLog('spawn-sync-failure', [
       `pid=${child.pid}`,
       `command=${command}`,
@@ -118,6 +120,12 @@ function expectSyncExit(caller, spawnArgs, {
       `NODE_DEBUG=${process.env.NODE_DEBUG || ''}`,
       `NODE_DEBUG_NATIVE=${process.env.NODE_DEBUG_NATIVE || ''}`,
       `NODE_INSPECT_DETAILED_LOG=${process.env.NODE_INSPECT_DETAILED_LOG || ''}`,
+      `NODE_INSPECT_TRACE=${process.env.NODE_INSPECT_TRACE || ''}`,
+      `NODE_INSPECT_TRACE_REPORT=${process.env.NODE_INSPECT_TRACE_REPORT || ''}`,
+      `NODE_INSPECT_TRACE_DUMP_ON_SIGNAL=${process.env.NODE_INSPECT_TRACE_DUMP_ON_SIGNAL || ''}`,
+      `NODE_INSPECT_NATIVE_TRACE_DUMP_ON_SIGNAL=${nativeTraceDumpOnSignal}`,
+      `NODE_INSPECT_TRACE_DUMP_ON_EXIT=${process.env.NODE_INSPECT_TRACE_DUMP_ON_EXIT || ''}`,
+      `NODE_INSPECT_TRACE_DUMP_ON_WAIT=${process.env.NODE_INSPECT_TRACE_DUMP_ON_WAIT || ''}`,
       '',
       '--- failures ---',
       failures.join('\n'),
