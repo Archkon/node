@@ -31,16 +31,22 @@ on:
         required: false
         default: ''
         type: string
+      inspect_debug:
+        description: Enable detailed inspector/debugger logs. Disable for timing-sensitive A/B runs.
+        required: true
+        default: true
+        type: boolean
 
 env:
   PYTHON_VERSION: '3.14'
   XCODE_VERSION: '16.4'
   CLANG_VERSION: '19'
   RUSTC_VERSION: '1.86'
-  NODE_DEBUG: inspect,inspect_probe
-  NODE_DEBUG_NATIVE: inspector,inspector_profiler
+  INSPECT_DEBUG: ${{ inputs.inspect_debug }}
+  NODE_DEBUG: ${{ inputs.inspect_debug && 'inspect,inspect_probe' || '' }}
+  NODE_DEBUG_NATIVE: ${{ inputs.inspect_debug && 'inspector,inspector_profiler' || '' }}
   NODE_INSPECT_DEBUG_LOG_DIR: ${{ github.workspace }}/workflow-logs/inspect-debug
-  NODE_INSPECT_DETAILED_LOG: '1'
+  NODE_INSPECT_DETAILED_LOG: ${{ inputs.inspect_debug && '1' || '0' }}
 
 permissions:
   contents: read
@@ -104,6 +110,7 @@ jobs:
           set -o pipefail
           mkdir -p "$LOG_DIR" "$NODE_INSPECT_DEBUG_LOG_DIR"
           {
+            echo "INSPECT_DEBUG=$INSPECT_DEBUG"
             echo "NODE_DEBUG=$NODE_DEBUG"
             echo "NODE_DEBUG_NATIVE=$NODE_DEBUG_NATIVE"
             echo "NODE_INSPECT_DEBUG_LOG_DIR=$NODE_INSPECT_DEBUG_LOG_DIR"
@@ -128,6 +135,7 @@ jobs:
             echo "REPEAT=$REPEAT"
             echo "JOBS=$JOBS"
             echo "TEST_ARGS=$TEST_ARGS"
+            echo "INSPECT_DEBUG=$INSPECT_DEBUG"
             echo "NODE_DEBUG=$NODE_DEBUG"
             echo "NODE_DEBUG_NATIVE=$NODE_DEBUG_NATIVE"
             echo "NODE_INSPECT_DEBUG_LOG_DIR=$NODE_INSPECT_DEBUG_LOG_DIR"
@@ -153,6 +161,7 @@ jobs:
             echo "runner.name=${{ runner.name }}"
             echo "github.run_id=${{ github.run_id }}"
             echo "github.run_attempt=${{ github.run_attempt }}"
+            echo "INSPECT_DEBUG=$INSPECT_DEBUG"
             echo "NODE_DEBUG=$NODE_DEBUG"
             echo "NODE_DEBUG_NATIVE=$NODE_DEBUG_NATIVE"
             echo "NODE_INSPECT_DEBUG_LOG_DIR=$NODE_INSPECT_DEBUG_LOG_DIR"
