@@ -124,7 +124,7 @@ jobs:
       - name: Make tarball
         run: |
           set -o pipefail
-          mkdir -p "$LOG_DIR"
+          mkdir -p "$LOG_DIR" "$NODE_INSPECT_DEBUG_LOG_DIR"
           {
             echo "NODE_DEBUG=$NODE_DEBUG"
             echo "NODE_DEBUG_NATIVE=$NODE_DEBUG_NATIVE"
@@ -146,7 +146,7 @@ jobs:
       - name: Collect workflow diagnostics
         if: always()
         run: |
-          mkdir -p "$LOG_DIR"
+          mkdir -p "$LOG_DIR" "$NODE_INSPECT_DEBUG_LOG_DIR"
           {
             echo "workflow=${{ github.workflow }}"
             echo "job=${{ github.job }}"
@@ -274,7 +274,7 @@ jobs:
       - name: Collect workflow diagnostics
         if: always()
         run: |
-          mkdir -p "$LOG_DIR"
+          mkdir -p "$LOG_DIR" "$NODE_INSPECT_DEBUG_LOG_DIR"
           {
             echo "workflow=${{ github.workflow }}"
             echo "job=${{ github.job }}"

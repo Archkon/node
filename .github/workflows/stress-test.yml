@@ -102,7 +102,7 @@ jobs:
       - name: Build
         run: |
           set -o pipefail
-          mkdir -p "$LOG_DIR"
+          mkdir -p "$LOG_DIR" "$NODE_INSPECT_DEBUG_LOG_DIR"
           {
             echo "NODE_DEBUG=$NODE_DEBUG"
             echo "NODE_DEBUG_NATIVE=$NODE_DEBUG_NATIVE"
@@ -120,7 +120,7 @@ jobs:
           TEST_PATH: ${{ inputs.test_path }}
         run: |
           set -o pipefail
-          mkdir -p "$LOG_DIR"
+          mkdir -p "$LOG_DIR" "$NODE_INSPECT_DEBUG_LOG_DIR"
           cd node
           read -ra EXTRA_ARGS <<< "$TEST_ARGS"
           {
@@ -144,7 +144,7 @@ jobs:
         if: always()
         shell: bash
         run: |
-          mkdir -p "$LOG_DIR"
+          mkdir -p "$LOG_DIR" "$NODE_INSPECT_DEBUG_LOG_DIR"
           {
             echo "workflow=${{ github.workflow }}"
             echo "job=${{ github.job }}"

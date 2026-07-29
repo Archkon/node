@@ -7,7 +7,15 @@
 #include "env.h"
 #include "util-inl.h"
 
+#include <cstdlib>
+#include <cstring>
 #include <type_traits>
+
+#ifdef _WIN32
+#include <process.h>
+#else
+#include <unistd.h>
+#endif
 
 namespace node {
 
@@ -199,6 +207,61 @@ void COLD_NOINLINE FPrintF(FILE* file,
   FWrite(file, SPrintF(format, std::forward<Args>(args)...));
 }
 
+inline bool InspectDetailedLogEnabled() {
+  static const bool enabled = [] {
+    const char* value = std::getenv("NODE_INSPECT_DETAILED_LOG");
+    return value != nullptr && std::strcmp(value, "0") != 0 &&
+           std::strcmp(value, "false") != 0 &&
+           std::strcmp(value, "FALSE") != 0;
+  }();
+  return enabled;
+}
+
+inline bool IsInspectorDebugCategory(DebugCategory cat) {
+  return cat == DebugCategory::INSPECTOR_CLIENT ||
+         cat == DebugCategory::INSPECTOR_SERVER ||
+         cat == DebugCategory::INSPECTOR_PROFILER;
+}
+
+inline const std::string& InspectDebugLogFilePath() {
+  static const std::string path = [] {
+    const char* dir = std::getenv("NODE_INSPECT_DEBUG_LOG_DIR");
+    if (dir == nullptr || dir[0] == '\0') return std::string();
+
+    std::string file(dir);
+    if (!file.empty() && file.back() != '/' && file.back() != '\\') {
+#ifdef _WIN32
+      file += '\\';
+#else
+      file += '/';
+#endif
+    }
+    file += "native-inspector-";
+#ifdef _WIN32
+    file += std::to_string(_getpid());
+#else
+    file += std::to_string(getpid());
+#endif
+    file += ".log";
+    return file;
+  }();
+  return path;
+}
+
+inline void AppendInspectDebugLog(DebugCategory cat, const std::string& message) {
+  if (!InspectDetailedLogEnabled() || !IsInspectorDebugCategory(cat)) {
+    return;
+  }
+
+  const std::string& path = InspectDebugLogFilePath();
+  if (path.empty()) return;
+
+  FILE* file = fopen(path.c_str(), "ab");
+  if (file == nullptr) return;
+  FWrite(file, message);
+  fclose(file);
+}
+
 template <typename... Args>
 inline void FORCE_INLINE Debug(EnabledDebugList* list,
                                DebugCategory cat,
@@ -206,7 +269,9 @@ inline void FORCE_INLINE Debug(EnabledDebugList* list,
                                Args&&... args) {
   if (!list->enabled(cat)) [[unlikely]]
     return;
-  FPrintF(stderr, format, std::forward<Args>(args)...);
+  std::string message = SPrintF(format, std::forward<Args>(args)...);
+  FWrite(stderr, message);
+  AppendInspectDebugLog(cat, message);
 }
 
 inline void FORCE_INLINE Debug(EnabledDebugList* list,
@@ -214,7 +279,9 @@ inline void FORCE_INLINE Debug(EnabledDebugList* list,
                                const char* message) {
   if (!list->enabled(cat)) [[unlikely]]
     return;
-  FPrintF(stderr, "%s", message);
+  std::string formatted = ToString(message);
+  FWrite(stderr, formatted);
+  AppendInspectDebugLog(cat, formatted);
 }
 
 template <typename... Args>

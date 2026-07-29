@@ -10,6 +10,13 @@
 #include <cstdlib>
 #include <cstring>
 #include <memory>
+#include <string>
+
+#ifdef _WIN32
+#include <process.h>
+#else
+#include <unistd.h>
+#endif
 
 #include "../../third_party/inspector_protocol/crdtp/json.h"
 #include "include/v8-context.h"
@@ -106,15 +113,55 @@ bool InspectorDetailedLogEnabled() {
   return enabled;
 }
 
+const std::string& InspectorDetailedLogFilePath() {
+  static const std::string path = [] {
+    const char* dir = std::getenv("NODE_INSPECT_DEBUG_LOG_DIR");
+    if (dir == nullptr || dir[0] == '\0') return std::string();
+
+    std::string file(dir);
+    if (!file.empty() && file.back() != '/' && file.back() != '\\') {
+#ifdef _WIN32
+      file += '\\';
+#else
+      file += '/';
+#endif
+    }
+    file += "v8-inspector-";
+#ifdef _WIN32
+    file += std::to_string(_getpid());
+#else
+    file += std::to_string(getpid());
+#endif
+    file += ".log";
+    return file;
+  }();
+  return path;
+}
+
 void InspectorDetailedLog(const char* format, ...) {
   if (!InspectorDetailedLogEnabled()) return;
 
   std::fprintf(stderr, "[v8 inspector detailed] ");
   va_list args;
   va_start(args, format);
-  std::vfprintf(stderr, format, args);
+  va_list stderr_args;
+  va_copy(stderr_args, args);
+  std::vfprintf(stderr, format, stderr_args);
+  va_end(stderr_args);
   va_end(args);
   std::fprintf(stderr, "\n");
+
+  const std::string& path = InspectorDetailedLogFilePath();
+  if (path.empty()) return;
+
+  FILE* file = std::fopen(path.c_str(), "ab");
+  if (file == nullptr) return;
+  std::fprintf(file, "[v8 inspector detailed] ");
+  va_start(args, format);
+  std::vfprintf(file, format, args);
+  va_end(args);
+  std::fprintf(file, "\n");
+  std::fclose(file);
 }
 
 enum class BreakpointType {

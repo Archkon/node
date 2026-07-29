@@ -82,7 +82,7 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          mkdir -p "$LOG_DIR"
+          mkdir -p "$LOG_DIR" "$NODE_INSPECT_DEBUG_LOG_DIR"
           nix-shell \
             -I "nixpkgs=$TAR_DIR/tools/nix/pkgs.nix" \
             --pure --keep TAR_DIR --keep FLAKY_TESTS --keep NODE_DEBUG --keep NODE_DEBUG_NATIVE --keep NODE_INSPECT_DEBUG_LOG_DIR --keep NODE_INSPECT_DETAILED_LOG \
@@ -106,7 +106,7 @@ jobs:
         if: always()
         shell: bash
         run: |
-          mkdir -p "$LOG_DIR"
+          mkdir -p "$LOG_DIR" "$NODE_INSPECT_DEBUG_LOG_DIR"
           {
             echo "workflow=${{ github.workflow }}"
             echo "job=${{ github.job }}"

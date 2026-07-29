@@ -128,7 +128,7 @@ jobs:
       - name: Build
         run: |
           set -o pipefail
-          mkdir -p "$LOG_DIR"
+          mkdir -p "$LOG_DIR" "$NODE_INSPECT_DEBUG_LOG_DIR"
           {
             echo "NODE_DEBUG=$NODE_DEBUG"
             echo "NODE_DEBUG_NATIVE=$NODE_DEBUG_NATIVE"
@@ -141,7 +141,7 @@ jobs:
       - name: Test
         run: |
           set -o pipefail
-          mkdir -p "$LOG_DIR"
+          mkdir -p "$LOG_DIR" "$NODE_INSPECT_DEBUG_LOG_DIR"
           {
             echo "NODE_DEBUG=$NODE_DEBUG"
             echo "NODE_DEBUG_NATIVE=$NODE_DEBUG_NATIVE"
@@ -153,7 +153,7 @@ jobs:
       - name: Re-run test in a folder whose name contains unusual chars
         run: |
           set -o pipefail
-          mkdir -p "$LOG_DIR"
+          mkdir -p "$LOG_DIR" "$NODE_INSPECT_DEBUG_LOG_DIR"
           mv node "$DIR"
           cd "$DIR"
           {
@@ -170,7 +170,7 @@ jobs:
       - name: Collect workflow diagnostics
         if: always()
         run: |
-          mkdir -p "$LOG_DIR"
+          mkdir -p "$LOG_DIR" "$NODE_INSPECT_DEBUG_LOG_DIR"
           {
             echo "workflow=${{ github.workflow }}"
             echo "job=${{ github.job }}"
