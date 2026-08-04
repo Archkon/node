@@ -78,6 +78,119 @@ static size_t uv__write_req_size(uv_write_t* req);
 static void uv__drain(uv_stream_t* stream);
 
 
+static void uv__debug_write(const char* phase,
+                            uv_stream_t* stream,
+                            uv_write_t* req,
+                            ssize_t result) {
+  int saved_errno;
+
+  saved_errno = errno;
+  if (getenv("NODE_DEBUG_WRITABLE_FINISHED") == NULL) {
+    errno = saved_errno;
+    return;
+  }
+
+  fprintf(stderr,
+          "[uv-write-debug] phase=%s stream=%p req=%p fd=%d "
+          "result=%zd req_error=%d write_index=%u nbufs=%u "
+          "queue_size=%zu\n",
+          phase,
+          (void*) stream,
+          (void*) req,
+          uv__stream_fd(stream),
+          result,
+          req->error,
+          req->write_index,
+          req->nbufs,
+          stream->write_queue_size);
+  fflush(stderr);
+  errno = saved_errno;
+}
+
+
+static void uv__debug_stream_io(const char* phase,
+                                uv_stream_t* stream,
+                                unsigned int events) {
+  int saved_errno;
+
+  saved_errno = errno;
+  if (getenv("NODE_DEBUG_WRITABLE_FINISHED") == NULL) {
+    errno = saved_errno;
+    return;
+  }
+
+  fprintf(stderr,
+          "[uv-stream-io-debug] phase=%s stream=%p watcher=%p fd=%d "
+          "events=0x%x flags=0x%x watcher_events=0x%x "
+          "watcher_pevents=0x%x queue_size=%zu queue_empty=%d "
+          "completed_empty=%d\n",
+          phase,
+          (void*) stream,
+          (void*) &stream->io_watcher,
+          uv__stream_fd(stream),
+          events,
+          stream->flags,
+          stream->io_watcher.events,
+          stream->io_watcher.pevents,
+          stream->write_queue_size,
+          uv__queue_empty(&stream->write_queue),
+          uv__queue_empty(&stream->write_completed_queue));
+  fflush(stderr);
+  errno = saved_errno;
+}
+
+
+static void uv__debug_read_result(uv_stream_t* stream,
+                                  ssize_t result,
+                                  int sys_errno) {
+  int saved_errno;
+
+  saved_errno = errno;
+  if (getenv("NODE_DEBUG_WRITABLE_FINISHED") == NULL) {
+    errno = saved_errno;
+    return;
+  }
+
+  fprintf(stderr,
+          "[uv-read-debug] stream=%p fd=%d result=%zd "
+          "errno=%d uv_error=%d\n",
+          (void*) stream,
+          uv__stream_fd(stream),
+          result,
+          sys_errno,
+          result < 0 ? UV__ERR(sys_errno) : 0);
+  fflush(stderr);
+  errno = saved_errno;
+}
+
+
+static void uv__debug_try_write(const char* phase,
+                                uv_stream_t* stream,
+                                unsigned int nbufs,
+                                ssize_t result) {
+  int saved_errno;
+
+  saved_errno = errno;
+  if (getenv("NODE_DEBUG_WRITABLE_FINISHED") == NULL) {
+    errno = saved_errno;
+    return;
+  }
+
+  fprintf(stderr,
+          "[uv-try-write-debug] phase=%s stream=%p watcher=%p fd=%d "
+          "nbufs=%u result=%zd queue_size=%zu\n",
+          phase,
+          (void*) stream,
+          (void*) &stream->io_watcher,
+          uv__stream_fd(stream),
+          nbufs,
+          result,
+          stream->write_queue_size);
+  fflush(stderr);
+  errno = saved_errno;
+}
+
+
 void uv__stream_init(uv_loop_t* loop,
                      uv_stream_t* stream,
                      uv_handle_type type) {
@@ -857,16 +970,19 @@ static void uv__write(uv_stream_t* stream) {
     q = uv__queue_head(&stream->write_queue);
     req = uv__queue_data(q, uv_write_t, queue);
     assert(req->handle == stream);
+    uv__debug_write("try", stream, req, 0);
 
     n = uv__try_write(stream,
                       &(req->bufs[req->write_index]),
                       req->nbufs - req->write_index,
                       req->send_handle);
+    uv__debug_write("try-result", stream, req, n);
 
     /* Ensure the handle isn't sent again in case this is a partial write. */
     if (n >= 0) {
       req->send_handle = NULL;
       if (uv__write_req_update(stream, req, n)) {
+        uv__debug_write("request-finished", stream, req, 0);
         uv__write_req_finish(req);
         if (count-- > 0)
           continue; /* Start trying to write the next request. */
@@ -891,6 +1007,7 @@ static void uv__write(uv_stream_t* stream) {
 
 error:
   req->error = n;
+  uv__debug_write("request-failed", stream, req, n);
   uv__write_req_finish(req);
   uv__io_stop(stream->loop, &stream->io_watcher, POLLOUT);
   uv__stream_osx_interrupt_select(stream);
@@ -922,8 +1039,10 @@ static void uv__write_callbacks(uv_stream_t* stream) {
     }
 
     /* NOTE: call callback AFTER freeing the request data. */
-    if (req->cb)
+    if (req->cb) {
+      uv__debug_write("callback", stream, req, req->error);
       req->cb(req, req->error);
+    }
   }
 }
 
@@ -1077,6 +1196,7 @@ static void uv__read(uv_stream_t* stream) {
       }
       while (nread < 0 && errno == EINTR);
     }
+    uv__debug_read_result(stream, nread, nread < 0 ? errno : 0);
 
     if (nread < 0) {
       /* Error */
@@ -1191,6 +1311,7 @@ void uv__stream_io(uv_loop_t* loop, uv__io_t* w, unsigned int events) {
   uv_stream_t* stream;
 
   stream = container_of(w, uv_stream_t, io_watcher);
+  uv__debug_stream_io("entry", stream, events);
 
   assert(stream->type == UV_TCP ||
          stream->type == UV_NAMED_PIPE ||
@@ -1198,17 +1319,23 @@ void uv__stream_io(uv_loop_t* loop, uv__io_t* w, unsigned int events) {
   assert(!(stream->flags & UV_HANDLE_CLOSING));
 
   if (stream->connect_req) {
+    uv__debug_stream_io("before-connect", stream, events);
     uv__stream_connect(stream);
     return;
   }
 
   assert(uv__stream_fd(stream) >= 0);
 
-  if (events & (POLLIN | POLLERR))
+  if (events & (POLLIN | POLLERR)) {
+    uv__debug_stream_io("before-read", stream, events);
     uv__read(stream);
+    uv__debug_stream_io("after-read", stream, events);
+  }
 
-  if (uv__stream_fd(stream) == -1)
+  if (uv__stream_fd(stream) == -1) {
+    uv__debug_stream_io("closed-after-read", stream, events);
     return;  /* read_cb closed stream. */
+  }
 
   /* Short-circuit iff POLLHUP is set, the user is still interested in read
    * events and uv__read() didn't see EOF. If the EOF flag is set, uv__read()
@@ -1223,19 +1350,30 @@ void uv__stream_io(uv_loop_t* loop, uv__io_t* w, unsigned int events) {
       (stream->flags & UV_HANDLE_READING) &&
       !(stream->flags & UV_HANDLE_READ_EOF)) {
     uv_buf_t buf = { NULL, 0 };
+    uv__debug_stream_io("before-eof", stream, events);
     uv__stream_eof(stream, &buf);
+    uv__debug_stream_io("after-eof", stream, events);
   }
 
-  if (uv__stream_fd(stream) == -1)
+  if (uv__stream_fd(stream) == -1) {
+    uv__debug_stream_io("closed-after-eof", stream, events);
     return;  /* read_cb closed stream. */
+  }
 
   if (events & (POLLOUT | POLLERR | POLLHUP)) {
+    uv__debug_stream_io("before-write", stream, events);
     uv__write(stream);
+    uv__debug_stream_io("after-write", stream, events);
+    uv__debug_stream_io("before-write-callbacks", stream, events);
     uv__write_callbacks(stream);
+    uv__debug_stream_io("after-write-callbacks", stream, events);
 
     /* Write queue drained. */
-    if (uv__queue_empty(&stream->write_queue))
+    if (uv__queue_empty(&stream->write_queue)) {
+      uv__debug_stream_io("before-drain", stream, events);
       uv__drain(stream);
+      uv__debug_stream_io("after-drain", stream, events);
+    }
   }
 }
 
@@ -1381,6 +1519,7 @@ int uv_write2(uv_write_t* req,
 
   /* Append the request to write_queue. */
   uv__queue_insert_tail(&stream->write_queue, &req->queue);
+  uv__debug_write("queued", stream, req, 0);
 
   /* If the queue was empty when this function began, we should attempt to
    * do the write immediately. Otherwise start the write_watcher and wait
@@ -1433,14 +1572,21 @@ int uv_try_write2(uv_stream_t* stream,
   int err;
 
   /* Connecting or already writing some data */
-  if (stream->connect_req != NULL || stream->write_queue_size != 0)
+  if (stream->connect_req != NULL || stream->write_queue_size != 0) {
+    uv__debug_try_write("busy", stream, nbufs, UV_EAGAIN);
     return UV_EAGAIN;
+  }
 
   err = uv__check_before_write(stream, nbufs, NULL);
-  if (err < 0)
+  if (err < 0) {
+    uv__debug_try_write("check-failed", stream, nbufs, err);
     return err;
+  }
 
-  return uv__try_write(stream, bufs, nbufs, send_handle);
+  uv__debug_try_write("before-syscall", stream, nbufs, 0);
+  err = uv__try_write(stream, bufs, nbufs, send_handle);
+  uv__debug_try_write("after-syscall", stream, nbufs, err);
+  return err;
 }
 
 

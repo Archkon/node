@@ -86,7 +86,7 @@ jobs:
             --run '
                 make -C "$TAR_DIR" build-ci -j4 V=1 || exit $?
                 status=0
-                "$TAR_DIR/out/Release/node" "$TAR_DIR/test/parallel/test-http-client-complete-response-reset.js" || status=$?
-                "$TAR_DIR/out/Release/node" "$TAR_DIR/test/parallel/test-http-client-early-response-reset-after-request-end.js" || status=$?
+                NODE_DEBUG_WRITABLE_FINISHED=1 "$TAR_DIR/out/Release/node" "$TAR_DIR/test/parallel/test-http-client-complete-response-reset.js" || status=$?
+                NODE_DEBUG_WRITABLE_FINISHED=1 "$TAR_DIR/out/Release/node" "$TAR_DIR/test/parallel/test-http-client-early-response-reset-after-request-end.js" || status=$?
                 exit "$status"
             ' "$TAR_DIR/shell.nix"

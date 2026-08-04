@@ -42,8 +42,11 @@ server.listen(0, common.mustCall(() => {
     // completed after the request finished should not be followed by a late
     // ClientRequest socket error.
   });
+  req._debugWritableFinished = true;
 
   let socketError;
+  let prefinishEmitted = false;
+  let finishEmitted = false;
   function logState(phase) {
     console.error({
       phase,
@@ -58,12 +61,30 @@ server.listen(0, common.mustCall(() => {
       handleReading: req.socket?._handle?.reading,
       hasParser: Boolean(req.socket?.parser),
       hasResponse: Boolean(req.res),
+      legacyFinished: req.finished,
       writableEnded: req.writableEnded,
       writableFinished: req.writableFinished,
+      previousWritableFinished: req.finished &&
+        req.outputSize === 0 &&
+        (!req.socket || req.socket.writableLength === 0),
+      writableLength: req.writableLength,
+      outputSize: req.outputSize,
+      socketWritableLength: req.socket?.writableLength,
+      prefinishEmitted,
+      finishEmitted,
       responseComplete: response?.complete,
       reqResComplete: req.res?.complete,
     });
   }
+
+  req.on('prefinish', () => {
+    prefinishEmitted = true;
+    logState('request-prefinish');
+  });
+  req.on('finish', () => {
+    finishEmitted = true;
+    logState('request-finish');
+  });
 
   req.on('socket', (socket) => {
     socket._readableState.autoDestroy = false;

@@ -33,11 +33,21 @@
 #include "udp_wrap.h"
 #include "util-inl.h"
 
-#include <cstring>  // memcpy()
 #include <climits>  // INT_MAX
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>  // memcpy()
 
 
 namespace node {
+
+namespace {
+
+bool WritableFinishedDebugEnabled() {
+  return std::getenv("NODE_DEBUG_WRITABLE_FINISHED") != nullptr;
+}
+
+}  // namespace
 
 using errors::TryCatchScope;
 using v8::Context;
@@ -407,6 +417,16 @@ void LibuvStreamWrap::AfterUvWrite(uv_write_t* req, int status) {
   LibuvWriteWrap* req_wrap = static_cast<LibuvWriteWrap*>(
       LibuvWriteWrap::from_req(req));
   CHECK_NOT_NULL(req_wrap);
+  if (WritableFinishedDebugEnabled()) {
+    std::fprintf(stderr,
+                 "[node-write-debug] phase=after-uv-write "
+                 "uv_stream=%p uv_req=%p write_wrap=%p status=%d\n",
+                 static_cast<void*>(req->handle),
+                 static_cast<void*>(req),
+                 static_cast<void*>(req_wrap),
+                 status);
+    std::fflush(stderr);
+  }
   HandleScope scope(req_wrap->env()->isolate());
   Context::Scope context_scope(req_wrap->env()->context());
   req_wrap->Done(status);

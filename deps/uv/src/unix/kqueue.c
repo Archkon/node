@@ -401,12 +401,13 @@ void uv__io_poll(uv_loop_t* loop, int timeout) {
       if (uv__io_cb_get(w) == UV__STREAM_IO &&
           (ev->filter == EVFILT_READ || ev->filter == EVFILT_WRITE)) {
         fprintf(stderr,
-                "[uv-kqueue-debug] batch=%llu index=%d/%d fd=%d "
+                "[uv-kqueue-debug] batch=%llu index=%d/%d watcher=%p fd=%d "
                 "filter=%s(%d) flags=0x%x fflags=0x%x data=%lld "
                 "events=0x%x pevents=0x%x revents=0x%x\n",
                 (unsigned long long) debug_batch,
                 i,
                 nfds,
+                (void*) w,
                 fd,
                 ev->filter == EVFILT_READ ? "READ" : "WRITE",
                 (int) ev->filter,

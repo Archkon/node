@@ -13,8 +13,18 @@
 #include "v8.h"
 
 #include <climits>  // INT_MAX
+#include <cstdio>
+#include <cstdlib>
 
 namespace node {
+
+namespace {
+
+bool WritableFinishedDebugEnabled() {
+  return std::getenv("NODE_DEBUG_WRITABLE_FINISHED") != nullptr;
+}
+
+}  // namespace
 
 using v8::Array;
 using v8::ArrayBuffer;
@@ -767,6 +777,15 @@ void ReportWritesToJSStreamListener::OnStreamAfterReqFinished(
   };
 
   const char* msg = stream->Error();
+  if (WritableFinishedDebugEnabled()) {
+    std::fprintf(stderr,
+                 "[node-write-debug] phase=before-js-oncomplete "
+                 "write_wrap=%p status=%d error=%s\n",
+                 static_cast<void*>(req_wrap),
+                 status,
+                 msg == nullptr ? "-" : msg);
+    std::fflush(stderr);
+  }
   if (msg != nullptr) {
     argv[2] = OneByteString(env->isolate(), msg);
     stream->ClearError();
@@ -792,6 +811,14 @@ void ShutdownWrap::OnDone(int status) {
 }
 
 void WriteWrap::OnDone(int status) {
+  if (WritableFinishedDebugEnabled()) {
+    std::fprintf(stderr,
+                 "[node-write-debug] phase=write-wrap-done "
+                 "write_wrap=%p status=%d\n",
+                 static_cast<void*>(this),
+                 status);
+    std::fflush(stderr);
+  }
   stream()->EmitAfterWrite(this, status);
   Dispose();
 }
