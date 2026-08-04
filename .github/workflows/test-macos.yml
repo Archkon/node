@@ -3,59 +3,8 @@ name: Test macOS
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
-    branches:
-      - '**'
-    paths-ignore:
-      - '**.md'
-      - '**.nix'
-      - eslint.config.mjs
-      - '**/eslint.config_partial.mjs'
-      - android-configure
-      - android-configure.py
-      - android-patches/**
-      - benchmarks/**
-      - codecov.yml
-      - doc/**
-      - pyproject.yml
-      - tsconfig.json
-      - test/internet/**
-      - tools/actions/**
-      - tools/dep_updaters/**
-      - tools/doc/**
-      - tools/eslint-rules/**
-      - tools/eslint/**
-      - tools/lint-md/**
-      - typings/**
-      - vcbuild.bat
-      - .**
-      - '!.github/workflows/test-macos.yml'
   push:
-    branches:
-      - '**'
-    paths-ignore:
-      - '**.md'
-      - '**.nix'
-      - eslint.config.mjs
-      - '**/eslint.config_partial.mjs'
-      - android-configure
-      - android-configure.py
-      - android-patches/**
-      - benchmarks/**
-      - codecov.yml
-      - doc/**
-      - pyproject.yml
-      - tsconfig.json
-      - test/internet/**
-      - tools/actions/**
-      - tools/dep_updaters/**
-      - tools/doc/**
-      - tools/eslint-rules/**
-      - tools/eslint/**
-      - tools/lint-md/**
-      - typings/**
-      - vcbuild.bat
-      - .**
-      - '!.github/workflows/test-macos.yml'
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
@@ -72,7 +21,6 @@ permissions:
 
 jobs:
   test-macOS:
-    if: github.event.pull_request.draft == false
     strategy:
       fail-fast: false
     runs-on: macos-15

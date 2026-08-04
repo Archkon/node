@@ -4,100 +4,9 @@ name: Test Shared libraries
 
 on:
   pull_request:
-    paths-ignore:
-      - '**.md'
-      - eslint.config.mjs
-      - '**/eslint.config_partial.mjs'
-      - android-configure
-      - android-configure.py
-      - android-patches/**
-      - benchmarks/**
-      - codecov.yml
-      - deps/ada/**
-      - deps/brotli/**
-      - deps/cares/**
-      - deps/crates/**
-      - deps/corepack/**
-      - deps/googletest/**
-      - deps/histogram/**
-      - deps/icu-small/**
-      - deps/icu-tmp/**
-      - deps/libffi/**
-      - deps/llhttp/**
-      - deps/merve/**
-      - deps/nbytes/**
-      - deps/nghttp2/**
-      - deps/ngtcp2/**
-      - deps/openssl/*/**
-      - deps/simdjson/**
-      - deps/sqlite/**
-      - deps/uv/**
-      - deps/uvwasi/**
-      - deps/zlib/**
-      - deps/zstd/**
-      - doc/**
-      - pyproject.yml
-      - tsconfig.json
-      - test/internet/**
-      - tools/**
-      - '!tools/gyp/**'
-      - '!tools/nix/**'
-      - '!tools/v8/**'
-      - '!tools/v8_gypfiles/**'
-      - typings/**
-      - vcbuild.bat
-      - .**
-      - '!.github/workflows/test-shared.yml'
-      - '!.github/workflows/build-shared.yml'
     types: [opened, synchronize, reopened, ready_for_review]
   push:
-    branches:
-      - '**'
-    paths-ignore:
-      - '**.md'
-      - eslint.config.mjs
-      - '**/eslint.config_partial.mjs'
-      - android-configure
-      - android-configure.py
-      - android-patches/**
-      - benchmarks/**
-      - codecov.yml
-      - deps/ada/**
-      - deps/brotli/**
-      - deps/cares/**
-      - deps/crates/**
-      - deps/corepack/**
-      - deps/googletest/**
-      - deps/histogram/**
-      - deps/icu-small/**
-      - deps/icu-tmp/**
-      - deps/libffi/**
-      - deps/llhttp/**
-      - deps/merve/**
-      - deps/nbytes/**
-      - deps/nghttp2/**
-      - deps/ngtcp2/**
-      - deps/openssl/*/**
-      - deps/simdjson/**
-      - deps/sqlite/**
-      - deps/uv/**
-      - deps/uvwasi/**
-      - deps/zlib/**
-      - deps/zstd/**
-      - doc/**
-      - pyproject.yml
-      - tsconfig.json
-      - test/internet/**
-      - tools/**
-      - '!tools/gyp/**'
-      - '!tools/nix/**'
-      - '!tools/v8/**'
-      - '!tools/v8_gypfiles/**'
-      - typings/**
-      - vcbuild.bat
-      - .**
-      - '!.github/workflows/test-shared.yml'
-      - '!.github/workflows/build-shared.yml'
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
@@ -108,8 +17,7 @@ permissions:
 
 jobs:
   build-tarball:
-    if: github.event.pull_request.draft == false
-    name: ${{ github.event_name == 'workflow_dispatch' && 'Skipped job' || 'Build slim tarball' }}
+    name: Build slim tarball
     runs-on: ubuntu-slim
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
