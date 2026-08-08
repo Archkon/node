@@ -30,3 +30,18 @@ assert.throws(
       ' the current working directory was likely removed without changing the working directory, uv_cwd',
   }
 );
+
+assert.throws(
+  () => process.chdir(dirname),
+  (err) => {
+    assert.strictEqual(err.code, 'ENOENT');
+    assert.strictEqual(err.syscall, 'chdir');
+    assert.strictEqual(err.dest, dirname);
+    assert.strictEqual('path' in err, false);
+    assert.strictEqual(
+      err.message,
+      `ENOENT: no such file or directory, chdir -> '${dirname}'`,
+    );
+    return true;
+  }
+);
