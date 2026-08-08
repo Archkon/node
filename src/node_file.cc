@@ -3738,11 +3738,13 @@ static void CpSyncCopyDir(const FunctionCallbackInfo<Value>& args) {
 
   auto file_copy_opts = std::filesystem::copy_options::recursive;
   if (force) {
-    file_copy_opts |= std::filesystem::copy_options::overwrite_existing;
+    file_copy_opts =
+        file_copy_opts | std::filesystem::copy_options::overwrite_existing;
   } else if (error_on_exist) {
-    file_copy_opts |= std::filesystem::copy_options::none;
+    file_copy_opts = file_copy_opts | std::filesystem::copy_options::none;
   } else {
-    file_copy_opts |= std::filesystem::copy_options::skip_existing;
+    file_copy_opts =
+        file_copy_opts | std::filesystem::copy_options::skip_existing;
   }
 
   std::function<bool(std::filesystem::path, std::filesystem::path)>
