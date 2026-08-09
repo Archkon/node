@@ -1,0 +1,91 @@
+name: Test official Node.js binary
+
+on:
+  workflow_dispatch:
+    inputs:
+      runner:
+        description: GitHub-hosted runner
+        required: true
+        default: ubuntu-latest
+        type: choice
+        options:
+          - ubuntu-slim
+          - ubuntu-latest
+          - ubuntu-22.04
+          - ubuntu-24.04
+          - ubuntu-26.04
+          - ubuntu-22.04-arm
+          - ubuntu-24.04-arm
+          - ubuntu-26.04-arm
+          - windows-latest
+          - windows-2022
+          - windows-2025
+          - windows-2025-vs2026
+          - windows-11-arm
+          - windows-11-vs2026-arm
+          - macos-latest
+          - macos-14
+          - macos-15
+          - macos-26
+          - macos-15-intel
+          - macos-26-intel
+      node_version:
+        description: Official Node.js release version (for example, 24.15.0)
+        required: true
+        default: 24.15.0
+        type: string
+      test_file:
+        description: Test file to run (relative to the repository root)
+        required: true
+        default: test/parallel/test-http-client-early-response-reset-after-request-end.js
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: ${{ inputs.runner }} / Node.js ${{ inputs.node_version }}
+    runs-on: ${{ inputs.runner }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Validate inputs
+        shell: bash
+        env:
+          NODE_VERSION: ${{ inputs.node_version }}
+          TEST_FILE: ${{ inputs.test_file }}
+        run: |
+          if [[ ! "$NODE_VERSION" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "node_version must be an exact official release such as 24.15.0" >&2
+            exit 1
+          fi
+
+          if [[ ! -f "$TEST_FILE" ]]; then
+            echo "Test file does not exist: $TEST_FILE" >&2
+            exit 1
+          fi
+      - name: Set up Node.js ${{ inputs.node_version }}
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f  # v6.3.0
+        with:
+          node-version: ${{ inputs.node_version }}
+          package-manager-cache: false
+      - name: Verify official binary
+        shell: bash
+        env:
+          NODE_VERSION: ${{ inputs.node_version }}
+        run: |
+          expected="v${NODE_VERSION#v}"
+          actual="$(node --version)"
+          echo "Node.js: $actual"
+          node -p "'Platform: ' + process.platform + ' ' + process.arch"
+          if [[ "$actual" != "$expected" ]]; then
+            echo "Expected $expected but setup-node installed $actual" >&2
+            exit 1
+          fi
+      - name: Run ${{ inputs.test_file }}
+        shell: bash
+        env:
+          TEST_FILE: ${{ inputs.test_file }}
+        run: node "$TEST_FILE"
