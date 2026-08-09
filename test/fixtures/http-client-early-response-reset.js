@@ -3,6 +3,9 @@
 
 const http = require('http');
 
+const BODY_PART_LENGTH = Number(process.argv[2] ?? 512 * 1024);
+const MAX_BODY_LENGTH = Number(process.argv[3] ?? 1024 * 1024);
+
 async function request (url, options) {
   return new Promise((resolve, reject) => {
     const req = http.request(url, {
@@ -22,7 +25,6 @@ async function request (url, options) {
   server.on('request', (request, response) => {
     console.log('server-request', request.url, request.headers);
 
-    const MAX_BODY_LENGTH = 1024 * 1024;
     let body = '';
     request.setEncoding('utf8');
     request.on('data', function onData (chunk) {
@@ -51,10 +53,10 @@ async function request (url, options) {
       'content-type': 'application/json'
     },
     body: JSON.stringify({
-      a: 'x'.repeat(512 * 1024),
-      b: 'x'.repeat(512 * 1024),
-      c: 'x'.repeat(512 * 1024),
-      d: 'x'.repeat(512 * 1024)
+      a: 'x'.repeat(BODY_PART_LENGTH),
+      b: 'x'.repeat(BODY_PART_LENGTH),
+      c: 'x'.repeat(BODY_PART_LENGTH),
+      d: 'x'.repeat(BODY_PART_LENGTH)
     }, null, '\t')
   };
 
