@@ -101,13 +101,38 @@ jobs:
           TEST_FILE: ${{ inputs.test_file }}
           TEST_RUNS: ${{ inputs.test_runs }}
         run: |
+          passed=0
+          failed=0
+          output_file="$RUNNER_TEMP/node-test-output.log"
+          failure_log="$RUNNER_TEMP/node-test-failures.log"
+          : > "$failure_log"
+          echo "Legend: . = passed, F = failed"
+
           for ((run = 1; run <= TEST_RUNS; run++)); do
-            echo "Run $run/$TEST_RUNS"
-            if node "$TEST_FILE"; then
-              continue
+            if node "$TEST_FILE" > "$output_file" 2>&1; then
+              ((passed += 1))
+              printf '.'
             else
               status=$?
-              echo "Test failed on run $run/$TEST_RUNS with exit code $status" >&2
-              exit "$status"
+              ((failed += 1))
+              printf 'F'
+              if ((failed == 1)); then
+                {
+                  echo "=== First failed run: $run/$TEST_RUNS (exit code $status) ==="
+                  cat "$output_file"
+                } > "$failure_log"
+              fi
+            fi
+
+            if ((run % 50 == 0 || run == TEST_RUNS)); then
+              printf ' %d/%d\n' "$run" "$TEST_RUNS"
             fi
           done
+
+          printf '\nTotal:  %d\nPassed: %d\nFailed: %d\n' \
+            "$TEST_RUNS" "$passed" "$failed"
+
+          if ((failed > 0)); then
+            cat "$failure_log"
+            exit 1
+          fi
