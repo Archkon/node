@@ -39,6 +39,11 @@ on:
         required: true
         default: test/parallel/test-http-client-early-response-reset-after-request-end.js
         type: string
+      test_runs:
+        description: Number of sequential test runs
+        required: true
+        default: '1'
+        type: string
 
 permissions:
   contents: read
@@ -56,9 +61,15 @@ jobs:
         env:
           NODE_VERSION: ${{ inputs.node_version }}
           TEST_FILE: ${{ inputs.test_file }}
+          TEST_RUNS: ${{ inputs.test_runs }}
         run: |
           if [[ ! "$NODE_VERSION" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "node_version must be an exact official release such as 24.15.0" >&2
+            exit 1
+          fi
+
+          if [[ ! "$TEST_RUNS" =~ ^[1-9][0-9]*$ ]]; then
+            echo "test_runs must be a positive integer" >&2
             exit 1
           fi
 
@@ -84,8 +95,19 @@ jobs:
             echo "Expected $expected but setup-node installed $actual" >&2
             exit 1
           fi
-      - name: Run ${{ inputs.test_file }}
+      - name: Run ${{ inputs.test_file }} ${{ inputs.test_runs }} time(s)
         shell: bash
         env:
           TEST_FILE: ${{ inputs.test_file }}
-        run: node "$TEST_FILE"
+          TEST_RUNS: ${{ inputs.test_runs }}
+        run: |
+          for ((run = 1; run <= TEST_RUNS; run++)); do
+            echo "Run $run/$TEST_RUNS"
+            if node "$TEST_FILE"; then
+              continue
+            else
+              status=$?
+              echo "Test failed on run $run/$TEST_RUNS with exit code $status" >&2
+              exit "$status"
+            fi
+          done
